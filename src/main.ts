@@ -1,6 +1,7 @@
 import { ACESFilmicToneMapping } from 'three';
 import { PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu';
 import { createSky } from './sky';
+import { createOcean } from './ocean';
 
 /** Erste Prüfung: ohne WebGPU wird nichts geladen. */
 async function requireWebGPU(): Promise<void> {
@@ -27,6 +28,9 @@ const scene = new Scene();
 const camera = new PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 40000);
 const sky = createSky();
 scene.add(sky.mesh);
+const ocean = createOcean();
+scene.add(ocean.mesh);
+camera.position.set(0, 4, 0);
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -53,6 +57,7 @@ renderer.setAnimationLoop((now) => {
   last = now;
 
   sky.update(dt);
+  ocean.update(dt, camera.position);
   camera.rotation.set(pitch, yaw, 0, 'YXZ');
   renderer.render(scene, camera);
 

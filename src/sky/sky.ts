@@ -1,5 +1,5 @@
 import { BackSide, Mesh, SphereGeometry, Vector3 } from 'three';
-import { MeshBasicNodeMaterial } from 'three/webgpu';
+import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
   clamp, dot, max, mix, normalize, positionLocal, pow, select, smoothstep, uniform, vec2, vec3, vec4,
 } from 'three/tsl';
@@ -8,22 +8,15 @@ import { fbm } from './noise';
 /** Sonnenrichtung (wie infinity-ocean) */
 export const SUN_DIR = new Vector3(-0.55, 0.22, -0.8).normalize();
 
-const SUN_COL = vec3(1.0, 0.86, 0.68);
+export const SUN_COL = vec3(1.0, 0.86, 0.68);
 
-/**
- * Analytischer Himmel (Port von infinity-ocean/src/sky.ts):
- * Rayleigh-artiger Verlauf, Mie-Glanz um die Sonne, Sonnenscheibe, geschichtete Wolken.
- * Linear-HDR-Ausgabe, Tonemapping macht der Renderer.
- */
-export function createSky() {
-  const sunDir = uniform(SUN_DIR.clone());
-  const time = uniform(0);
+/** Sonnenrichtung als Uniform, gemeinsam für Himmel und Ozean */
+export const sunDir = uniform(SUN_DIR.clone());
 
-  const rd = normalize(positionLocal);
+/** Himmel ohne Wolken und Sonnenscheibe (auch für Spiegelung und Horizontdunst) */
+export function skyBase(rd: Node<'vec3'>) {
   const y = rd.y;
   const sd = max(dot(rd, sunDir), 0);
-
-  // ── Basis ──────────────────────────────────────────────
   const zenith = vec3(0.10, 0.26, 0.62);
   const horizon = vec3(0.70, 0.80, 0.90);
   const h = pow(max(y, 0), 0.45);
@@ -32,7 +25,22 @@ export function createSky() {
   base = base.add(SUN_COL.mul(pow(sd, 18)).mul(0.45)); // Halo
   base = base.add(SUN_COL.mul(pow(sd, 400)).mul(3.0)); // enger Kern
   const below = mix(horizon.mul(0.9), vec3(0.30, 0.42, 0.50), clamp(y.negate().mul(3), 0, 1));
-  base = select(y.lessThan(0), below, base);
+  return select(y.lessThan(0), below, base);
+}
+
+/**
+ * Analytischer Himmel (Port von infinity-ocean/src/sky.ts):
+ * Rayleigh-artiger Verlauf, Mie-Glanz um die Sonne, Sonnenscheibe, geschichtete Wolken.
+ * Linear-HDR-Ausgabe, Tonemapping macht der Renderer.
+ */
+export function createSky() {
+  const time = uniform(0);
+
+  const rd = normalize(positionLocal);
+  const y = rd.y;
+
+  const base = skyBase(rd);
+  const sd = max(dot(rd, sunDir), 0);
 
   // ── Wolken ─────────────────────────────────────────────
   const p = rd.xz.div(max(y, 0).add(0.06)).mul(1.3).add(vec2(time.mul(0.012), time.mul(0.004)));
