@@ -40,7 +40,7 @@ let pitch = 0.35;
 addEventListener('pointermove', (e) => {
   if (e.buttons === 0) return;
   yaw -= e.movementX * 0.004;
-  pitch = Math.max(-0.2, Math.min(1.4, pitch + e.movementY * 0.004));
+  pitch = Math.max(-0.2, Math.min(1.4, pitch - e.movementY * 0.004));
 });
 
 const hud = document.getElementById('hud')!;
