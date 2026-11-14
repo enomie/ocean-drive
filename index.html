@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ocean Drive</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+      canvas { display: block; }
+      #msg { position: fixed; inset: 0; display: none; place-items: center; color: #fff;
+             font: 16px system-ui, sans-serif; text-align: center; padding: 24px; }
+      #hud { position: fixed; left: 8px; bottom: 8px; color: #fff; font: 12px ui-monospace, monospace;
+             text-shadow: 0 0 3px #000; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="msg"></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
