@@ -1,3 +1,4 @@
+import { ACESFilmicToneMapping } from 'three';
 import { PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu';
 import { createSky } from './sky';
 
@@ -15,6 +16,8 @@ async function requireWebGPU(): Promise<void> {
 await requireWebGPU();
 
 const renderer = new WebGPURenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.toneMapping = ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.6;
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -33,7 +36,7 @@ addEventListener('resize', () => {
 
 // Kamera: Maus zieht, Blick über den Horizont
 let yaw = 0.6;
-let pitch = 0.18;
+let pitch = 0.35;
 addEventListener('pointermove', (e) => {
   if (e.buttons === 0) return;
   yaw -= e.movementX * 0.004;
@@ -56,7 +59,7 @@ renderer.setAnimationLoop((now) => {
   acc += dt;
   frames++;
   if (acc >= 0.5) {
-    hud.textContent = `${Math.round(frames / acc)} fps · Sonne ${(sky.sunElevation() * 57.3).toFixed(0)}°`;
+    hud.textContent = `${Math.round(frames / acc)} fps`;
     acc = 0;
     frames = 0;
   }
