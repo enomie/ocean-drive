@@ -7,6 +7,7 @@ import {
 import { skyBase } from '../sky';
 import { SUN_COL, sunDir } from '../core/sun';
 import { under, underwaterColor } from '../underwater';
+import { finishColor } from '../core/output';
 import { camXZ, gerstner, updateWavePhases, waveHeight } from './waves';
 
 /** Polares Gitter um die Kamera: dicht nah, grob zum Horizont (~40 km) */
@@ -99,7 +100,7 @@ export function createOcean() {
     }).Else(() => {
       out.assign(mix(colBelow, underwaterColor(colBelow, V.negate(), dist), under));
     });
-    return vec4(out, 1);
+    return vec4(finishColor(out), 1);
   })();
 
   const mesh = new Mesh(polarGrid(260, 360, 1.032), material);

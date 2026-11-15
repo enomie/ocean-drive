@@ -7,6 +7,7 @@ import {
 import { surfaceHeight } from '../ocean';
 import { waterTransmittance } from '../underwater';
 import { pixelClamp } from './common';
+import { finishColor } from '../core/output';
 
 const BOX = 34; // m, um die Kamera gewickeltes Volumen
 const COUNT = 7000;
@@ -73,7 +74,7 @@ export function createPlankton() {
   material.scaleNode = select(air, float(0), size);
   const r = length(uv().sub(0.5));
   const a = smoothstep(0.5, 0.15, r).mul(vA);
-  material.colorNode = vec4(vCol.mul(float(1).add(smoothstep(0.2, 0, r).mul(1.5))).mul(a), 1);
+  material.colorNode = vec4(finishColor(vCol.mul(float(1).add(smoothstep(0.2, 0, r).mul(1.5)))).mul(a), 1);
 
   const mesh = new Mesh(new PlaneGeometry(1, 1), material);
   mesh.name = 'plankton';

@@ -7,6 +7,7 @@ import {
 import { surfaceHeight } from '../ocean';
 import { under, underwaterFog } from '../underwater';
 import { pixelClamp } from './common';
+import { finishColor } from '../core/output';
 
 const COUNT = 6000; // Ringpuffer
 const MAX_SPAWN = 512; // pro Frame
@@ -103,7 +104,7 @@ export class BubbleSystem {
     const glint = pow(max(dot(n, normalize(vec3(-0.35, 0.7, 0.6))), 0), 40).mul(3);
     const a = select(r2.lessThan(1), rim.mul(0.85).add(glint).add(0.04).mul(vA), float(0));
     const body = vec3(0.75, 0.93, 0.97).mul(glint.add(0.7));
-    material.colorNode = vec4(mix(body, underwaterFog(body, vRd, vDist), under), a.min(1));
+    material.colorNode = vec4(finishColor(mix(body, underwaterFog(body, vRd, vDist), under)), a.min(1));
 
     this.mesh = new Mesh(new PlaneGeometry(1, 1), material);
     this.mesh.name = 'bubbles';

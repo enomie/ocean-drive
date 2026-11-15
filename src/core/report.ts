@@ -1,5 +1,6 @@
 import { MAX_DRAW_CALLS, TARGET_WORK_MS } from './config';
 import type { Engine } from './engine';
+import { outputMode } from './output';
 import type { CaptureStats } from './monitor';
 
 const CAPTURE_SECONDS = 5;
@@ -21,7 +22,8 @@ async function deviceInfo(engine: Engine): Promise<string> {
   return (
     `GPU: ${adapter}\n` +
     `Browser: ${chrome ? `Chrome ${chrome}` : navigator.userAgent} · Canvas ${c.width}×${c.height} = ${f((c.width * c.height) / 1e6, 2)} MP ` +
-    `(Display-DPR ${devicePixelRatio}, Render-Ratio ${f(engine.pixelRatio, 2)})`
+    `(Display-DPR ${devicePixelRatio}, Render-Ratio ${f(engine.pixelRatio, 2)})\n` +
+    `Ausgabe: MSAA ${engine.renderer.samples > 1 ? `${engine.renderer.samples}×` : 'aus'} · Tonemapping im ${outputMode() === 'material' ? 'Material (direkt ins Canvas)' : 'Renderer (Zwischenpuffer + Ausgabe-Pass)'}`
   );
 }
 
@@ -193,6 +195,13 @@ async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<stri
   if (allRender != null && parts.every((p) => p !== null)) {
     const sum = (parts as number[]).reduce((a, b) => a + (b - empty), 0) + empty;
     lines.push(`Gegenprobe 2 (Render: Summe der Teile vs. alles): ${f(sum, 2)} vs. ${f(allRender, 2)} ms (Differenz = Überlappung, z. B. Himmel hinter dem Ozean per Tiefentest verworfen)`);
+  }
+  if (allRender != null && parts.every((p) => p !== null)) {
+    const fixed = ((parts as number[]).reduce((a, b) => a + b, 0) - allRender) / 2;
+    lines.push(
+      `Fester Anteil F (≈ (Σ „nur“ − „alles“) / 2): ${f(fixed, 2)} ms = ${f((fixed / allRender) * 100, 0)} % von „alles“` +
+        ' – steckt in jeder „nur“-Zeile (Zwischenpuffer/MSAA/Ausgabe), obere Schranke (Überlappung nicht abgezogen)',
+    );
   }
   if (allRender != null && half != null) lines.push(`Gegenprobe 3 (Pixel, nur Render): halbe Auflösung kostet ${f((half / allRender) * 100, 0)} % (≈ 50 % = pixelgebunden)`);
   return lines.join('\n');

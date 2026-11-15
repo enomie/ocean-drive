@@ -7,6 +7,7 @@ import {
 import { fbm } from './noise';
 import { SUN_COL, SUN_DIR, sunDir } from '../core/sun';
 import { under, underwaterColor } from '../underwater';
+import { finishColor } from '../core/output';
 
 export { SUN_COL, SUN_DIR, sunDir };
 
@@ -70,7 +71,7 @@ export function createSky() {
     If(under.greaterThan(0), () => {
       out.assign(mix(out, underwaterColor(vec3(0), rd, float(1e4)), under));
     });
-    return vec4(out, 1);
+    return vec4(finishColor(out), 1);
   })();
 
   const mesh = new Mesh(new SphereGeometry(30000, 48, 24), material);
