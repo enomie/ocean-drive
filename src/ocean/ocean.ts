@@ -71,13 +71,14 @@ export function createOcean() {
     // Körperfarbe: gedämpftes, dunkles Petrol-Blau. Streulicht nur an den dünnen, obersten Kammspitzen gegen das Licht,
     // und nur bei flachem Blick (steil von oben bleibt das Wasser dunkel).
     const deep = vec3(0.007, 0.032, 0.05);
-    // Dezentes Streulicht: entsättigtes Blaugrün (≈ #062429 aufgehellt, linear), ~12 % Intensität, nur an steilen Kämmen gegen das Licht
-    const sss = vec3(0.03, 0.15, 0.17);
-    const sunBack = pow(clamp(dot(V.negate(), L).mul(0.5).add(0.5), 0, 1), 4);
-    const crest = smoothstep(0.5, 1.6, vHeight).mul(smoothstep(0.75, 0.97, N.y).oneMinus()); // hoch UND steil
+    // Türkises Durchscheinen im Sonnenlicht: dünne Kämme gegen die Sonne leuchten, Täler und sonnenabgewandte Seiten bleiben dunkel
+    const sss = vec3(0.02, 0.3, 0.27);
+    const sunBack = pow(clamp(dot(V.negate(), L).mul(0.5).add(0.5), 0, 1), 3);
+    const crest = smoothstep(0.0, 1.0, vHeight.mul(0.8).add(0.3)).mul(smoothstep(0.6, 0.97, N.y).oneMinus().mul(0.5).add(0.5));
     const grazing = pow(NdV.oneMinus(), 2).mul(0.6).add(0.4);
+    const sunUp = smoothstep(0.0, 0.3, L.y);
     const body = deep
-      .add(sss.mul(sunBack.mul(0.85).add(0.15)).mul(crest).mul(grazing).mul(0.12))
+      .add(sss.mul(sunBack.mul(0.9).add(0.1)).mul(crest).mul(grazing).mul(sunUp).mul(0.45))
       .add(vec3(0.006, 0.026, 0.034).mul(max(L.y, 0)));
     let col = mix(body, refl, fres);
 
