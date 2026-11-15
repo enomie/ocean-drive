@@ -41,7 +41,7 @@ export const LAYERS = {
 } as const;
 
 /** Neigungsstärke der Kräuselungs-Oktaven (≈ 4°) */
-export const RIPPLE_SLOPE = 0.09;
+export const RIPPLE_SLOPE = 0.06;
 
 const PERIOD = 256; // Kantenlänge der Noise-Textur in Zellen
 const mod = (a: number): number => ((a % PERIOD) + PERIOD) % PERIOD;

@@ -1,7 +1,7 @@
-import { If, cos, dot, float, max, mix, oneMinus, positionLocal, sin, smoothstep, sqrt, uniform, vec2, vec3 } from 'three/tsl';
+import { If, cos, dot, float, max, oneMinus, positionLocal, sin, smoothstep, sqrt, uniform, vec2, vec3 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 import { ORIGIN } from '../core/origin';
-import { LAYERS, RIPPLE_SLOPE, layerNoise, layerSlope, updateDetailLayers } from './detail';
+import { LAYERS, RIPPLE_SLOPE, layerSlope, updateDetailLayers } from './detail';
 
 /**
  * Windsee-Spektrum als Gerstner-Wellen (Port von infinity-ocean/src/waves.ts):
@@ -9,8 +9,8 @@ import { LAYERS, RIPPLE_SLOPE, layerNoise, layerSlope, updateDetailLayers } from
  * Richtung, Amplitude und Länge sind Konstanten im Shader-Graphen; nur die Phase ist ein Uniform.
  */
 const WIND = 0.25;
-const STEEPNESS = 0.58;
-const N = 20;
+const STEEPNESS = 0.9; // → spitze Kämme, runde Täler (Gerstner; < 1 = keine Schleifen)
+const N = 14;
 
 interface Wave { dx: number; dz: number; amp: number; len: number; phase0: number }
 
@@ -19,12 +19,12 @@ export const WAVES: readonly Wave[] = (() => {
   let seed = 9001;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i < N; i++) {
-    const len = 300 * Math.pow(5 / 300, i / (N - 1)) * (0.93 + rnd() * 0.14);
+    const len = 120 * Math.pow(3 / 120, i / (N - 1)) * (0.93 + rnd() * 0.14);
     // drei Richtungs-Cluster (0°, +25°, −15° zum Wind) → spitze, kreuzende Kämme statt weicher S-Kurven
     const CLUSTER = [0, 0.44, -0.26];
-    const spread = 0.12 + 0.3 * (i / (N - 1));
+    const spread = 0.2;
     const dir = WIND + CLUSTER[i % 3]! + (rnd() * 2 - 1) * spread;
-    const steep = 0.028 + 0.02 * Math.sin(Math.PI * Math.min(i / (N * 0.7), 1));
+    const steep = (0.03 + 0.02 * Math.sin(Math.PI * Math.min(i / (N * 0.7), 1))) * (0.7 + rnd() * 0.6);
     out.push({ dx: Math.cos(dir), dz: Math.sin(dir), amp: ((steep * len) / (2 * Math.PI)) * 1.1 * (0.8 + rnd() * 0.4), len, phase0: rnd() * 6.283 });
   }
   return out;
@@ -94,26 +94,17 @@ export function shadingNormal(base: V2, footprint: F) {
   const ny = float(1).toVar();
   let roughness: F = float(0);
 
-  // Muster aufbrechen (nur Shading): ein langsames Feld verschiebt die Phase der kurzen Wellen (Streifen biegen sich),
-  // ein zweites moduliert deren Amplitude. Lange Wellen (≥ 100 m) werden kaum verschoben → bleiben deckungsgleich zur Geometrie.
-  const W = vec2(layerNoise(LAYERS.warpX, base).sub(0.5).mul(24), layerNoise(LAYERS.warpZ, base).sub(0.5).mul(24));
-  const nA = layerNoise(LAYERS.ampA, base);
-  const nB = layerNoise(LAYERS.ampB, base);
-
   WAVES.forEach((w, i) => {
     const k = (Math.PI * 2) / w.len;
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(w.len)));
     // nicht aufgelöster Anteil → Rauheit: mittlere quadratische Neigung einer Sinuswelle = ½ (k·A)²
     roughness = roughness.add(oneMinus(vis).mul(0.5 * (k * w.amp) * (k * w.amp)));
-    const c = Math.min(1, Math.max(0.35, 10 / w.len)); // Stärke der Phasenverschiebung: 1 für ≤ 10 m, 0,1 für ≥ 100 m
-    const ampMod = w.len < 90 ? mix(nA, nB, i / (N - 1)).mul(1.6).add(0.2) : float(1); // Mittel 1
     If(vis.greaterThan(0.002), () => {
-      const A = vis.mul(w.amp).mul(ampMod);
+      const A = vis.mul(w.amp);
       const f = base.x
         .mul(w.dx * k)
         .add(base.y.mul(w.dz * k))
-        .add(phase[i]!)
-        .add(W.x.mul(w.dx * k * c).add(W.y.mul(w.dz * k * c)));
+        .add(phase[i]!);
       const Q = STEEPNESS / (k * w.amp * N);
       const AC = A.mul(cos(f));
       nx.subAssign(AC.mul(k * w.dx));
@@ -124,12 +115,12 @@ export function shadingNormal(base: V2, footprint: F) {
 
   // Kräuselung: drei Oktaven animiertes Noise (Dezimeter bis Meter), nach Pixelgröße band-begrenzt wie die Wellen
   // feinste Lagen schwächer: dort ist die Textur am gröbsten abgetastet → sonst krisselig
-  const RIPS: readonly (readonly [typeof LAYERS.rip0, number])[] = [[LAYERS.rip0, 0.8], [LAYERS.rip1, 0.6], [LAYERS.rip2, 0.4], [LAYERS.rip3, 0.2]];
+  const RIPS: readonly (readonly [typeof LAYERS.rip1, number])[] = [[LAYERS.rip1, 0.5], [LAYERS.rip2, 0.3]];
   for (const [L, gain] of RIPS) {
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(L.scale)));
     roughness = roughness.add(oneMinus(vis).mul(0.5 * RIPPLE_SLOPE * RIPPLE_SLOPE));
     If(vis.greaterThan(0.002), () => {
-      const sl = layerSlope(L, base, RIPPLE_SLOPE).mul(vis).mul(gain).mul(nA.mul(0.8).add(0.6));
+      const sl = layerSlope(L, base, RIPPLE_SLOPE).mul(vis).mul(gain);
       nx.subAssign(sl.x);
       nz.subAssign(sl.y);
     });
