@@ -1,7 +1,8 @@
 import { BackSide, Mesh, SphereGeometry } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
-  Fn, If, clamp, dot, float, max, mix, normalize, positionLocal, pow, select, smoothstep, uniform, vec2, vec3, vec4,
+  Fn, If, cameraProjectionMatrix, clamp, dot, float, max, mix, modelViewMatrix, normalize, positionLocal, pow, select,
+  smoothstep, uniform, vec2, vec3, vec4,
 } from 'three/tsl';
 import { fbm } from './noise';
 import { SUN_COL, SUN_DIR, sunDir } from '../core/sun';
@@ -56,6 +57,10 @@ export function createSky() {
   const col = mix(base.add(disk), lit, cloudA);
 
   const material = new MeshBasicNodeMaterial({ side: BackSide, depthWrite: false, fog: false });
+  // Himmel liegt auf der Fernebene (Tiefe = 1, „xyww“-Trick) und wird NACH dem Ozean gezeichnet:
+  // der Tiefentest verwirft jedes Pixel, das der Ozean schon abdeckt – Wolken werden nur für sichtbaren Himmel berechnet.
+  const clip = cameraProjectionMatrix.mul(modelViewMatrix).mul(vec4(positionLocal, 1));
+  material.vertexNode = vec4(clip.x, clip.y, clip.w, clip.w);
   // Über Wasser: Himmel. Unter Wasser: nur der Wasserkörper (Wolken-Noise wird dann gar nicht berechnet).
   material.colorNode = Fn(() => {
     const out = vec3(0).toVar();
@@ -71,7 +76,7 @@ export function createSky() {
   const mesh = new Mesh(new SphereGeometry(30000, 48, 24), material);
   mesh.name = 'sky';
   mesh.frustumCulled = false;
-  mesh.renderOrder = -10;
+  mesh.renderOrder = 10; // nach dem Ozean (renderOrder 0)
 
   return {
     mesh,
