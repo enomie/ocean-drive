@@ -6,7 +6,7 @@ import {
 } from 'three/tsl';
 import { surfaceHeight } from '../ocean';
 import { waterTransmittance } from '../underwater';
-import { pixelClamp } from './common';
+import { pixelClamp, throughSurface } from './common';
 import { finishColor } from '../core/output';
 
 const BOX = 34; // m, um die Kamera gewickeltes Volumen
@@ -46,7 +46,8 @@ export function createPlankton() {
   const cam = cameraPosition;
   const p = cam.add(vec3(r0, r1, r2).mul(BOX).add(move).sub(cam).sub(originMod).mod(BOX)).sub(BOX / 2);
   const d = length(p.sub(cam));
-  const air = p.y.greaterThan(surfaceHeight(p.xz).add(0.15));
+  const surf = surfaceHeight(p.xz);
+  const air = p.y.greaterThan(surf.add(0.15));
 
   const baseSize = select(krill, r1.mul(0.07).add(0.05), r0.mul(r0).mul(0.04).add(0.012));
   const { size, fade } = pixelClamp(baseSize, d);
@@ -71,7 +72,7 @@ export function createPlankton() {
   const alpha = float(1).sub(smoothstep(0.75, 1, edge)).mul(smoothstep(0.15, 0.6, d)).mul(fade);
 
   const vCol = varying(body.mul(lit).add(glow).mul(waterTransmittance(d)), 'vPlanktonCol');
-  const vA = varying(select(air, float(0), alpha), 'vPlanktonA');
+  const vA = varying(select(air, float(0), alpha.mul(throughSurface(max(surf.sub(p.y), 0), d))), 'vPlanktonA');
 
   const material = new SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending });
   material.positionNode = p;

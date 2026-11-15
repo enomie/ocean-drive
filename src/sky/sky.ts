@@ -2,11 +2,11 @@ import { BackSide, Mesh, SphereGeometry } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
   Fn, If, cameraProjectionMatrix, clamp, dot, float, max, mix, modelViewMatrix, normalize, positionLocal, pow,
-  smoothstep, uniform, vec2, vec3, vec4,
+  select, smoothstep, uniform, vec2, vec3, vec4,
 } from 'three/tsl';
 import { fbm } from '../core/noise';
 import { SUN_COL, SUN_DIR, sunDir } from '../core/sun';
-import { under, underwaterColor } from '../underwater';
+import { under, underAt, underwaterColor } from '../underwater';
 import { finishColor } from '../core/output';
 
 export { SUN_COL, SUN_DIR, sunDir };
@@ -66,11 +66,12 @@ export function createSky() {
   // Über Wasser: Himmel. Unter Wasser: nur der Wasserkörper (Wolken-Noise wird dann gar nicht berechnet).
   material.colorNode = Fn(() => {
     const out = vec3(0).toVar();
-    If(under.lessThan(0.999), () => {
+    const u = select(under.greaterThan(0), underAt(rd), float(0)); // pro Pixel: Wasserkante der Taucherbrille
+    If(u.lessThan(0.999), () => {
       out.assign(col);
     });
-    If(under.greaterThan(0), () => {
-      out.assign(mix(out, underwaterColor(vec3(0), rd, float(1e4)), under));
+    If(u.greaterThan(0), () => {
+      out.assign(mix(out, underwaterColor(vec3(0), rd, float(1e4)), u));
     });
     return vec4(finishColor(out), 1);
   })();

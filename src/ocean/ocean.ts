@@ -6,7 +6,7 @@ import {
 } from 'three/tsl';
 import { skyBase } from '../sky';
 import { SUN_COL, sunDir } from '../core/sun';
-import { under, underwaterColor } from '../underwater';
+import { underAt, underwaterColor } from '../underwater';
 import { finishColor } from '../core/output';
 import { camH, camXZ, gerstner, shaderMirrorError, shadingNormal, shiftInvarianceError, updateWavePhases, waveHeight } from './waves';
 import { pixelAngle } from '../core/view';
@@ -38,9 +38,9 @@ function polarGrid(rings: number, segs: number, growth: number): BufferGeometry 
 }
 
 /**
- * Minimaler Ozean: Gerstner-Spektrum im Vertex-Knoten, Fresnel + Himmelsspiegelung,
- * Unterwasser-Streulicht an Kämmen, Sonnenglanz, Horizontdunst. 1 Draw Call.
- * Noch nicht enthalten: Schaum, Detail-Wellen, Kielwasser, Flachwasser, Unterseite.
+ * Ozean, 1 Draw Call: Gerstner-Geometrie im Vertex-Shader; im Fragment Normalen pro Pixel (Wellen + Kräuselung),
+ * Fresnel + Himmelsspiegelung, türkises Gegenlicht an Kämmen, Sonnenglanz, Horizontdunst; Rückseite = Ansicht von unten.
+ * Noch nicht enthalten: Schaum, Kielwasser, Flachwasser.
  */
 export function createOcean() {
   const g = gerstner();
@@ -52,14 +52,16 @@ export function createOcean() {
   material.positionNode = g.position;
   // Alles Fragment-Shading in einem Fn: das Shading-LOD braucht Variablen/Verzweigungen (nur dort erlaubt)
   material.colorNode = Fn(() => {
-    const toCam = cameraPosition.sub(vWorld);
+    // Pixelgröße aus der (groben) Dreiecksposition, danach V/dist aus der glatten Pixel-Position:
+    // der scharfe Sonnenglanz würde sonst die Knicke der Dreiecks-Interpolation als Gitter zeigen
+    const toCam0 = cameraPosition.sub(vWorld);
+    const dist0 = length(toCam0);
+    const footprint = dist0.mul(pixelAngle).div(max(toCam0.y.abs().div(dist0), 0.15)); // Pixelgröße am Boden (m)
+    const sh = shadingNormal(vBase, footprint);
+    const toCam = cameraPosition.sub(sh.position);
     const dist = length(toCam);
     const V = toCam.div(dist);
     const L = sunDir;
-
-    // ── Shading-LOD: Normale pro Pixel, Wellen nach Pixelgröße band-begrenzt, Rest → Rauheit ──
-    const footprint = dist.mul(pixelAngle).div(max(V.y.abs(), 0.15)); // Pixelgröße am Boden (m), gedehnt bei flachem Blick
-    const sh = shadingNormal(vBase, footprint);
     const N = sh.normal;
     const m2 = sh.roughness.add(0.0003); // mittlere quadratische Neigung: unaufgelöste Wellen + Mikro-Rauheit
 
@@ -68,17 +70,20 @@ export function createOcean() {
     const R = reflect(V.negate(), N);
     const refl = skyBase(normalize(vec3(R.x, abs(R.y).add(0.01), R.z)));
 
-    // Körperfarbe: gedämpftes, dunkles Petrol-Blau. Streulicht nur an den dünnen, obersten Kammspitzen gegen das Licht,
-    // und nur bei flachem Blick (steil von oben bleibt das Wasser dunkel).
+    // Körperfarbe: dunkles Petrol-Blau. Gegenlicht scheint türkis durch die dünnen Kämme (Täler, sonnenabgewandte
+    // Seiten und steiler Blick von oben bleiben dunkel), in zwei Stufen: breites, tiefes Glimmen + heller Jade-Kern
+    // in den dünnsten Spitzen genau gegen die Sonne.
     const deep = vec3(0.007, 0.032, 0.05);
-    // Türkises Durchscheinen im Sonnenlicht: dünne Kämme gegen die Sonne leuchten, Täler und sonnenabgewandte Seiten bleiben dunkel
-    const sss = vec3(0.02, 0.3, 0.27);
+    const sssDeep = vec3(0.004, 0.17, 0.19);
+    const sssCore = vec3(0.03, 0.5, 0.38);
     const sunBack = pow(clamp(dot(V.negate(), L).mul(0.5).add(0.5), 0, 1), 3);
     const crest = smoothstep(0.0, 1.0, vHeight.mul(0.8).add(0.3)).mul(smoothstep(0.6, 0.97, N.y).oneMinus().mul(0.5).add(0.5));
     const grazing = pow(NdV.oneMinus(), 2).mul(0.6).add(0.4);
     const sunUp = smoothstep(0.0, 0.3, L.y);
+    const glow = sssDeep.mul(sunBack.mul(2.2).add(0.06)).mul(crest)
+      .add(sssCore.mul(pow(sunBack, 2).mul(5.0)).mul(crest.mul(crest)));
     const body = deep
-      .add(sss.mul(sunBack.mul(0.9).add(0.1)).mul(crest).mul(grazing).mul(sunUp).mul(0.45))
+      .add(glow.mul(grazing).mul(sunUp).mul(0.5))
       .add(vec3(0.006, 0.026, 0.034).mul(max(L.y, 0)));
     let col = mix(body, refl, fres);
 
@@ -112,7 +117,7 @@ export function createOcean() {
     If(frontFacing, () => {
       out.assign(col);
     }).Else(() => {
-      out.assign(mix(colBelow, underwaterColor(colBelow, V.negate(), dist), under));
+      out.assign(mix(colBelow, underwaterColor(colBelow, V.negate(), dist), underAt(V.negate())));
     });
     return vec4(finishColor(out), 1);
   })();

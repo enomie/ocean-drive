@@ -7,7 +7,7 @@ import {
 } from 'three/tsl';
 import { surfaceHeight } from '../ocean';
 import { under, underwaterFog } from '../underwater';
-import { pixelClamp } from './common';
+import { pixelClamp, throughSurface } from './common';
 import { finishColor } from '../core/output';
 
 const COUNT = 6000; // Ringpuffer
@@ -103,7 +103,8 @@ export class BubbleSystem {
     const dist = length(P.sub(cameraPosition));
     const { size: worldSize, fade } = pixelClamp(S.mul(t.mul(0.8).add(0.7)), dist); // wachsen beim Aufsteigen
     const life01 = smoothstep(0, 0.05, t).mul(t.mul(t).oneMinus());
-    const vA = varying(select(alive, life01.mul(fade).mul(smoothstep(0.8, 2.5, dist)), float(0)), 'vBubbleA');
+    const near = smoothstep(0.8, 2.5, dist).mul(throughSurface(max(P.y.negate(), 0), dist));
+    const vA = varying(select(alive, life01.mul(fade).mul(near), float(0)), 'vBubbleA');
     const vRd = varying(normalize(P.sub(cameraPosition)), 'vBubbleRd');
     const vDist = varying(dist, 'vBubbleDist');
 

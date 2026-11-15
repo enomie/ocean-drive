@@ -1,3 +1,4 @@
+import type { Material } from 'three';
 import type { Context, Module } from '../core/module';
 import { ORIGIN } from '../core/origin';
 import { isUnderwater } from '../underwater';
@@ -16,7 +17,10 @@ export function planktonModule(): Module {
       c.scene.add(plankton.mesh);
     },
     update() {
-      plankton.mesh.visible = isUnderwater(); // über Wasser verdeckt die Oberfläche alles: gar nicht zeichnen
+      // über Wasser nur ganz nah an der Oberfläche: dann leicht durch die Oberfläche sichtbar (ohne Tiefentest)
+      const uw = isUnderwater();
+      plankton.mesh.visible = uw || ctx.camera.position.y < 9;
+      setDepthTest(plankton.mesh.material as Material, uw);
       plankton.update(ctx.clock.time, ORIGIN.x, ORIGIN.z);
     },
     probe() {
@@ -55,6 +59,7 @@ export function bubblesModule(): Module<BubblesApi> {
     },
     /** Spawns aller Emitter liegen jetzt vor (Emitter laufen in update, davor): einfügen + simulieren */
     compute() {
+      setDepthTest(system.mesh.material as Material, isUnderwater()); // über Wasser: durch die Oberfläche (throughSurface)
       system.update(ctx.clock.dt);
     },
     probe() {
@@ -66,4 +71,11 @@ export function bubblesModule(): Module<BubblesApi> {
       ctx.scene.remove(system.mesh);
     },
   };
+}
+
+/** Tiefentest nur bei Änderung umschalten (neue Pipeline) */
+function setDepthTest(m: Material, on: boolean): void {
+  if (m.depthTest === on) return;
+  m.depthTest = on;
+  m.needsUpdate = true;
 }

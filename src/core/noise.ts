@@ -13,7 +13,7 @@ export const NOISE_DATA = (() => {
   return data;
 })();
 
-const noiseTex = new DataTexture(NOISE_DATA, 256, 256);
+export const noiseTex = new DataTexture(NOISE_DATA, 256, 256);
 noiseTex.wrapS = noiseTex.wrapT = RepeatWrapping;
 noiseTex.magFilter = noiseTex.minFilter = LinearFilter;
 noiseTex.needsUpdate = true;

@@ -1,11 +1,12 @@
 import { If, cos, dot, float, max, oneMinus, positionLocal, sin, smoothstep, sqrt, uniform, vec2, vec3 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 import { ORIGIN } from '../core/origin';
-import { updateDetailLayers } from './detail';
+import { LOD_BAND, lodVisibility, rippleSlope, updateRipples } from './ripples';
 
 /**
  * Windsee-Spektrum als Gerstner-Wellen (Port von infinity-ocean/src/waves.ts):
- * Wellenlängen log-verteilt 140 m → 2,4 m, Richtungen um den Wind gestreut (breiter für kurze Wellen).
+ * 14 Wellen, Längen log-verteilt 120 m → 3 m, Richtungen um den Wind gestreut (breiter für kurze Wellen).
+ * Feinere Kräuselung ist reines Shading (ripples.ts).
  * Richtung, Amplitude und Länge sind Konstanten im Shader-Graphen; nur die Phase ist ein Uniform.
  */
 const WIND = 0.25;
@@ -20,10 +21,11 @@ export const WAVES: readonly Wave[] = (() => {
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i < N; i++) {
     const len = 120 * Math.pow(3 / 120, i / (N - 1)) * (0.93 + rnd() * 0.14);
-    // drei Richtungs-Cluster (0°, +25°, −15° zum Wind) → spitze, kreuzende Kämme statt weicher S-Kurven
-    const CLUSTER = [0, 0.44, -0.26];
-    const spread = 0.2;
-    const dir = WIND + CLUSTER[i % 3]! + (rnd() * 2 - 1) * spread;
+    // Richtungen: lange Wellen eng um den Wind, kurze immer breiter gestreut (goldener Winkel + Zufall).
+    // KEINE festen Cluster: wenige gleich gerichtete Wellenpaare kreuzen sich zu einem regelmäßigen Rautengitter.
+    const spread = 0.25 + 0.9 * (i / (N - 1));
+    const u = ((i * 0.618034 + rnd() * 0.3) % 1) * 2 - 1;
+    const dir = WIND + u * spread;
     const steep = (0.03 + 0.02 * Math.sin(Math.PI * Math.min(i / (N * 0.7), 1))) * (0.7 + rnd() * 0.6);
     out.push({ dx: Math.cos(dir), dz: Math.sin(dir), amp: ((steep * len) / (2 * Math.PI)) * 1.1 * (0.8 + rnd() * 0.4), len, phase0: rnd() * 6.283 });
   }
@@ -37,77 +39,47 @@ export const camH = uniform(0);
 const phase = WAVES.map(() => uniform(0));
 
 /**
- * Kräuselung nur fürs Shading: 8 kleine Sinuswellen (1,4 m … 12 cm) in zufälligen Richtungen rundum.
- * Bewusst KEIN Gitter-Noise: Value-Noise hat Zellkanten (→ „Raster“), Sinuswellen sind überall glatt.
- */
-const DETAIL = (() => {
-  const out: { dx: number; dz: number; len: number; slope: number; speed: number; phase0: number }[] = [];
-  let seed = 4242;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const M = 8;
-  for (let i = 0; i < M; i++) {
-    const len = 1.4 * Math.pow(0.12 / 1.4, i / (M - 1)) * (0.9 + rnd() * 0.2);
-    const a = WIND + (rnd() * 2 - 1) * 1.6;
-    out.push({ dx: Math.cos(a), dz: Math.sin(a), len, slope: 0.05, speed: 0.4 + rnd() * 0.3, phase0: rnd() * 6.283 });
-  }
-  return out;
-})();
-const detailPhase = DETAIL.map(() => uniform(0));
-
-/**
  * Phasen in Doppelpräzision auf der CPU wickeln: k·(d·ORIGIN) − ω·t + φ₀ bleibt auch nach Stunden und bei
  * Millionen Metern Abstand exakt. Der Shader addiert nur k·(d·lokal) – lokal ist klein, also float32-genau.
  */
 export function updateWavePhases(t: number): void {
-  updateDetailLayers(t);
   const TAU = Math.PI * 2;
   WAVES.forEach((w, i) => {
     const k = TAU / w.len;
     const f = k * (w.dx * ORIGIN.x + w.dz * ORIGIN.z - Math.sqrt(9.81 / k) * t) + w.phase0;
     phase[i]!.value = f - Math.floor(f / TAU) * TAU;
   });
-  DETAIL.forEach((w, i) => {
-    const k = TAU / w.len;
-    const f = k * (w.dx * ORIGIN.x + w.dz * ORIGIN.z - w.speed * t) + w.phase0;
-    detailPhase[i]!.value = f - Math.floor(f / TAU) * TAU;
-  });
+  updateRipples(t);
 }
 
 type F = Node<'float'>;
 type V2 = Node<'vec2'>;
 
-/** Verschiebung + analytische Normale am unverschobenen Punkt `base` (Weltkoordinaten xz), `dist` = Abstand zur Kamera */
+/** Verschiebung am unverschobenen Punkt `base` (lokal, xz); `dist` = Abstand zur Kamera. Normalen: `shadingNormal` */
 function wavesAt(base: V2, dist: F) {
   let dx: F = float(0);
   let dz: F = float(0);
   let dy: F = float(0);
-  let nx: F = float(0);
-  let nz: F = float(0);
-  let ny: F = float(1);
   WAVES.forEach((w, i) => {
     const k = (Math.PI * 2) / w.len;
-    // ferne Wellen ausblenden, die das Gitter nicht mehr auflösen kann
-    const A = oneMinus(smoothstep(w.len * 5, w.len * 13, dist)).mul(w.amp);
+    // Welle ausblenden, bevor das Gitter (Ringabstand ≈ 3,2 % von r) unter ~6 Punkte pro Wellenlänge fällt → sonst Aliasing-Raster;
+    // die Neigung bleibt im Pixel-Shading (shadingNormal) erhalten
+    const A = oneMinus(smoothstep(w.len * 2, w.len * 5, dist)).mul(w.amp);
     const f = base.x.mul(w.dx * k).add(base.y.mul(w.dz * k)).add(phase[i]!);
     const Q = STEEPNESS / (k * w.amp * N);
-    const S = sin(f);
-    const C = cos(f);
-    const AC = A.mul(C);
+    const AC = A.mul(cos(f));
     dx = dx.add(AC.mul(Q * w.dx));
     dz = dz.add(AC.mul(Q * w.dz));
-    dy = dy.add(A.mul(S));
-    nx = nx.sub(AC.mul(k * w.dx));
-    nz = nz.sub(AC.mul(k * w.dz));
-    ny = ny.sub(A.mul(S).mul(Q * k));
+    dy = dy.add(A.mul(sin(f)));
   });
-  return { dx, dy, dz, normal: vec3(nx, ny, nz) };
+  return { dx, dy, dz };
 }
 
 /**
- * Shading-LOD: Normale PRO PIXEL aus demselben Spektrum (Fragment-Stufe), band-begrenzt nach Pixelgröße.
- * Eine Welle zählt als aufgelöst, wenn sie ≥ ~10 Pixel lang erscheint (voll) und fällt ab ~4 Pixeln weg.
- * Weggelassene Wellen gehen nicht verloren: ihre Steilheit wird als Rauheit `m²` (mittlere quadratische Neigung)
- * zurückgegeben und verbreitert später den Sonnenglanz – aus großer Höhe bleibt das Meer ein Meer statt glatter Flecken.
+ * Shading PRO PIXEL: Normale und Position aus demselben Spektrum plus Kräuselung, band-begrenzt nach Pixelgröße
+ * (`lodVisibility`). Weggelassene Details gehen nicht verloren: ihre Steilheit wird als Rauheit `m²` (mittlere
+ * quadratische Neigung) zurückgegeben und verbreitert den Sonnenglanz – aus großer Höhe bleibt das Meer ein Meer.
+ * Die Position ist glatt (nicht die stückweise lineare Dreiecks-Interpolation) → kein Gitter im scharfen Glanz.
  * @param base      Weltposition (lokal) des Gitterpunkts, xz
  * @param footprint Pixelgröße am Boden in Metern (Entfernung × Pixelwinkel / Neigung)
  */
@@ -115,49 +87,45 @@ export function shadingNormal(base: V2, footprint: F) {
   const nx = float(0).toVar();
   const nz = float(0).toVar();
   const ny = float(1).toVar();
+  const px = float(0).toVar();
+  const py = float(0).toVar();
+  const pz = float(0).toVar();
   let roughness: F = float(0);
 
   WAVES.forEach((w, i) => {
     const k = (Math.PI * 2) / w.len;
-    const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(w.len)));
+    const vis = lodVisibility(footprint, w.len);
     // nicht aufgelöster Anteil → Rauheit: mittlere quadratische Neigung einer Sinuswelle = ½ (k·A)²
     roughness = roughness.add(oneMinus(vis).mul(0.5 * (k * w.amp) * (k * w.amp)));
     If(vis.greaterThan(0.002), () => {
       const A = vis.mul(w.amp);
-      const f = base.x
-        .mul(w.dx * k)
-        .add(base.y.mul(w.dz * k))
-        .add(phase[i]!);
+      const f = base.x.mul(w.dx * k).add(base.y.mul(w.dz * k)).add(phase[i]!);
       const Q = STEEPNESS / (k * w.amp * N);
       const AC = A.mul(cos(f));
+      const AS = A.mul(sin(f));
       nx.subAssign(AC.mul(k * w.dx));
       nz.subAssign(AC.mul(k * w.dz));
-      ny.subAssign(A.mul(sin(f)).mul(Q * k));
+      ny.subAssign(AS.mul(Q * k));
+      px.addAssign(AC.mul(Q * w.dx));
+      pz.addAssign(AC.mul(Q * w.dz));
+      py.addAssign(AS);
     });
   });
 
-  // Kräuselung: kleine Sinuswellen, nach Pixelgröße band-begrenzt; Rest → Rauheit
-  DETAIL.forEach((w, i) => {
-    const k = (Math.PI * 2) / w.len;
-    const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(w.len)));
-    roughness = roughness.add(oneMinus(vis).mul(0.5 * w.slope * w.slope));
-    If(vis.greaterThan(0.002), () => {
-      const f = base.x.mul(w.dx * k).add(base.y.mul(w.dz * k)).add(detailPhase[i]!);
-      const g = vis.mul(w.slope).mul(cos(f));
-      nx.subAssign(g.mul(w.dx));
-      nz.subAssign(g.mul(w.dz));
-    });
-  });
-  return { normal: vec3(nx, ny, nz).normalize(), roughness: max(roughness, 0) };
+  // Kräuselung: Gradient-Noise-Oktaven (ripples.ts), nach Pixelgröße band-begrenzt; Rest → Rauheit
+  const rip = rippleSlope(base, footprint);
+  nx.subAssign(rip.slope.x);
+  nz.subAssign(rip.slope.y);
+  roughness = roughness.add(rip.roughness);
+  return { normal: vec3(nx, ny, nz).normalize(), roughness: max(roughness, 0), position: vec3(base.x.add(px), py, base.y.add(pz)) };
 }
 
-/** Ozean-Vertex: Gitterpunkt relativ zur Kamera → verschobene Weltposition, Normale, Höhe */
+/** Ozean-Vertex: Gitterpunkt relativ zur Kamera → verschobene Position (lokal), Höhe */
 export function gerstner() {
   const base = positionLocal.xz.add(camXZ);
   const w = wavesAt(base, sqrt(dot(positionLocal.xz, positionLocal.xz).add(camH.mul(camH)))); // 3D-Abstand zur Kamera
   return {
     position: vec3(base.x.add(w.dx), w.dy, base.y.add(w.dz)),
-    normal: w.normal.normalize(),
     height: w.dy,
     /** Weltposition (lokal) des unverschobenen Gitterpunkts – Eingabe für die Pixel-Normalen */
     base,
@@ -195,7 +163,7 @@ function displacement(px: number, pz: number, t: number, camX: number, camZ: num
   const dist = Math.hypot(px - camX, pz - camZ, camH); // 3D-Abstand wie auf der GPU
   for (const w of WAVES) {
     const k = (Math.PI * 2) / w.len;
-    const A = w.amp * (1 - smooth(w.len * 5, w.len * 13, dist));
+    const A = w.amp * (1 - smooth(w.len * 2, w.len * 5, dist));
     const f = k * (w.dx * (px + ox) + w.dz * (pz + oz) - Math.sqrt(9.81 / k) * t) + w.phase0; // absolute Position, Doppelpräzision
     const Q = STEEPNESS / (k * w.amp * N);
     const C = Math.cos(f);
@@ -272,7 +240,7 @@ export function shadingLod(footprint: number): { resolved: number; m2: number } 
   let m2 = 0;
   for (const w of WAVES) {
     const k = (Math.PI * 2) / w.len;
-    const vis = 1 - smooth(0.1, 0.25, footprint / w.len);
+    const vis = 1 - smooth(LOD_BAND[0], LOD_BAND[1], footprint / w.len);
     if (vis > 0.002) resolved++;
     m2 += (1 - vis) * 0.5 * (k * w.amp) * (k * w.amp);
   }
