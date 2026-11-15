@@ -10,7 +10,7 @@ import { LAYERS, RIPPLE_SLOPE, layerNoise, layerSlope, updateDetailLayers } from
  */
 const WIND = 0.25;
 const STEEPNESS = 0.58;
-const N = 16;
+const N = 20;
 
 interface Wave { dx: number; dz: number; amp: number; len: number; phase0: number }
 
@@ -20,10 +20,11 @@ export const WAVES: readonly Wave[] = (() => {
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i < N; i++) {
     const len = 140 * Math.pow(2.4 / 140, i / (N - 1)) * (0.93 + rnd() * 0.14);
-    const spread = 0.35 + 0.9 * (i / (N - 1));
-    const dir = WIND + (rnd() * 2 - 1) * spread;
+    const spread = 0.6 + 0.9 * (i / (N - 1));
+    // jede 5. Welle gehört zu einer kreuzenden Dünung → keine dominante Streifenrichtung
+    const dir = WIND + (i % 5 === 2 ? 1.1 : 0) + (rnd() * 2 - 1) * spread;
     const steep = 0.028 + 0.02 * Math.sin(Math.PI * Math.min(i / (N * 0.7), 1));
-    out.push({ dx: Math.cos(dir), dz: Math.sin(dir), amp: ((steep * len) / (2 * Math.PI)) * 1.1, len, phase0: rnd() * 6.283 });
+    out.push({ dx: Math.cos(dir), dz: Math.sin(dir), amp: ((steep * len) / (2 * Math.PI)) * 1.1 * (0.8 + rnd() * 0.4), len, phase0: rnd() * 6.283 });
   }
   return out;
 })();
@@ -121,7 +122,7 @@ export function shadingNormal(base: V2, footprint: F) {
   });
 
   // Kräuselung: drei Oktaven animiertes Noise (Dezimeter bis Meter), nach Pixelgröße band-begrenzt wie die Wellen
-  for (const L of [LAYERS.rip1, LAYERS.rip2, LAYERS.rip3]) {
+  for (const L of [LAYERS.rip0, LAYERS.rip1, LAYERS.rip2, LAYERS.rip3, LAYERS.rip4]) {
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(L.scale)));
     roughness = roughness.add(oneMinus(vis).mul(0.5 * RIPPLE_SLOPE * RIPPLE_SLOPE));
     If(vis.greaterThan(0.002), () => {

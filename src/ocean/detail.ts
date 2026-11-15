@@ -34,13 +34,15 @@ export const LAYERS = {
   warpZ: layer(41, 1.9),
   ampA: layer(13, 0.9, [0.02, 0.01]),
   ampB: layer(29, 2.4, [-0.01, 0.015]),
+  rip0: layer(3.0, 1.3, [0.12, -0.08]),
   rip1: layer(1.0, 0.5, [0.35, 0.12]),
   rip2: layer(0.45, 2.1, [-0.1, 0.5]),
   rip3: layer(0.2, 4.0, [0.6, -0.3]),
+  rip4: layer(0.09, 5.3, [-0.5, 0.7]),
 } as const;
 
 /** Neigungsstärke der Kräuselungs-Oktaven (≈ 4°) */
-export const RIPPLE_SLOPE = 0.07;
+export const RIPPLE_SLOPE = 0.1;
 
 const PERIOD = 256; // Kantenlänge der Noise-Textur in Zellen
 const mod = (a: number): number => ((a % PERIOD) + PERIOD) % PERIOD;
