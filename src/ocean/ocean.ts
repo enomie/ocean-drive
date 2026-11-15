@@ -63,7 +63,7 @@ export function createOcean() {
     const V = toCam.div(dist);
     const L = sunDir;
     const N = sh.normal;
-    const m2 = sh.roughness.add(0.0003); // mittlere quadratische Neigung: unaufgelöste Wellen + Mikro-Rauheit
+    const m2 = sh.roughness.add(0.0006); // mittlere quadratische Neigung: unaufgelöste Wellen + Mikro-Rauheit
 
     const NdV = max(dot(N, V), 0);
     const fres = pow(NdV.oneMinus(), 5).mul(0.98).add(0.02);
