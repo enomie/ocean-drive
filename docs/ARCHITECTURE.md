@@ -73,7 +73,8 @@ Gemessen wird die **Arbeit**, nicht der Anzeigeabstand: `max(CPU-Zeit, GPU-Zeit)
 - `__dbg.report` (Dev) liefert den letzten Bericht als Objekt – Grundlage für Headless-Läufe.
 - **Button „🔬 Diagnose“:** rendert nacheinander „leer / nur Himmel / nur Ozean / nur Partikel / alles / halbe Auflösung“ unter **Stresslast** (`Engine.renderRepeat`: Szene 6× pro Frame, damit die GPU voll ausgelastet ist – im Normalbetrieb verfälschen VSync-Leerlauf und GPU-Takt die Zeiten, siehe Messung vom 15.11.). Drei eingebaute Gegenproben prüfen die Messung selbst (normal vs. Stress, Summe der Teile, Pixel-Skalierung).
 - **Renderauflösung:** `MAX_RENDER_PIXELS` (2,6 MP) begrenzt den Pixel-Ratio auf hochauflösenden Displays; `?mp=3.3` überschreibt.
-- **Engine-Ausgabe:** Mit Tonemapping rendert three in einen Zwischenpuffer und zeichnet 1 Vollbild-Quad zur Ausgabe. Dieser Call wird automatisch mitgezählt (`needsFrameBufferTarget`).
+- **Ausgabe (`core/output.ts`):** Standard ist Tonemapping im Material (`finishColor`), kein MSAA: der Renderer schreibt direkt ins Canvas. Mit `?tm=renderer` rendert three dagegen in einen HDR-Zwischenpuffer und zeichnet 1 Vollbild-Quad; dieser Call wird automatisch mitgezählt (`needsFrameBufferTarget`).
+  Messung 15.11. (M1, 120 Hz, 2,6 MP, über Wasser): MSAA 4× + Renderer-Tonemapping = 5,3 ms GPU, MSAA aus + Material = 2,9 ms. Der feste Anteil (Zwischenpuffer, MSAA, Ausgabe) war mit ~3 ms mehr als die Hälfte der Frame-Zeit. Bei Terrain mit vielen Geometriekanten Anti-Aliasing neu entscheiden (MSAA 2×, FXAA, Auflösung).
 - GPU-Zeit kommt über `trackTimestamp` (Timestamp-Query); ohne Feature steht im HUD „GPU n/a“.
 - **Die deklarierten Budgets sind Schätzungen**, bis sie auf dem Referenzgerät (Chrome, MacBook M1, 120 Hz) gemessen wurden. Der Monitor zeigt dann, was nachgezogen werden muss.
 

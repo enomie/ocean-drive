@@ -22,9 +22,10 @@ async function requireWebGPU(): Promise<void> {
 await requireWebGPU();
 
 const params = new URLSearchParams(location.search);
-// Diagnose-Schalter: ?aa=0 (MSAA aus) · ?tm=material (Tonemapping im Material statt im Renderer)
-const renderer = new WebGPURenderer({ antialias: params.get('aa') !== '0', powerPreference: 'high-performance', trackTimestamp: true });
-configureOutput(renderer, params.get('tm') === 'material' ? 'material' : 'renderer');
+// Standard (Messung 15.11., M1, 2,6 MP: 5,3 → 2,9 ms): kein MSAA, Tonemapping im Material → kein Zwischenpuffer, kein Ausgabe-Pass.
+// Zurückschalten per URL: ?aa=1 (MSAA 4×) · ?tm=renderer (Tonemapping im Renderer)
+const renderer = new WebGPURenderer({ antialias: params.get('aa') === '1', powerPreference: 'high-performance', trackTimestamp: true });
+configureOutput(renderer, params.get('tm') === 'renderer' ? 'renderer' : 'material');
 document.body.appendChild(renderer.domElement);
 await renderer.init();
 

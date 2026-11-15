@@ -17,12 +17,12 @@ Pläne und Architektur: `docs/PLAN.md`, `docs/ARCHITECTURE.md` (zuerst lesen).
 - **Zeit nur aus `ctx.clock`, Eingabe nur aus `ctx.input`.** Keine eigenen Akkumulatoren/Listener in Modulen.
 - **Vorwärts = −Z**, Y oben, Meeresspiegel y = 0, 1 Einheit = 1 m.
 - **Alles, was unter Wasser sichtbar ist**, ruft `underwaterColor`/`underwaterFog` (`src/underwater`) im Material auf.
-- **Linear-HDR im Shader**, Tonemapping (ACES) im Renderer; das kostet 1 Ausgabe-Draw-Call, den der Monitor mitzählt.
+- **Linear-HDR im Shader.** Tonemapping (ACES) + sRGB macht jedes Material selbst: **jedes `colorNode` endet mit `finishColor(...)`** (`core/output.ts`). Standard: kein MSAA, kein Zwischenpuffer, kein Ausgabe-Pass (Messung: 5,3 → 2,9 ms). Alternativen per URL: `?aa=1`, `?tm=renderer`.
 - **GPU/CPU-Spiegel** (`ocean/waves.ts`: `gerstner`/`surfaceHeight` ↔ `waveHeight`) müssen synchron bleiben.
 - Keine Testdateien: Selbstprüfung per `probe()`, Budgets per Monitor.
 
 ## Debug
-`F3` Modul-Tabelle · Button „📋 Messung kopieren“ (unten rechts: 5 s messen, Text in die Zwischenablage) · HUD unten links (rot = Verstoß) · Button „🔬 Diagnose“ (GPU-Kosten je Teil) · URL `?y=-5` Starthöhe (negativ = unter Wasser), `?mp=3.3` max. Renderauflösung in Megapixel, `?aa=0` MSAA aus, `?tm=material` Tonemapping im Material (Diagnose-Schalter) ·
+`F3` Modul-Tabelle · Button „📋 Messung kopieren“ (unten rechts: 5 s messen, Text in die Zwischenablage) · HUD unten links (rot = Verstoß) · Button „🔬 Diagnose“ (GPU-Kosten je Teil) · URL `?y=-5` Starthöhe (negativ = unter Wasser), `?mp=3.3` max. Renderauflösung in Megapixel, `?aa=1` MSAA 4× an, `?tm=renderer` Tonemapping im Renderer (Vergleichsschalter) ·
 Konsole (Dev): `__dbg.report`, `__dbg.get('ocean')`, `__dbg.modules`.
 
 ## Steuerung
