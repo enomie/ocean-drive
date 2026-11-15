@@ -19,7 +19,7 @@ export const WAVES: readonly Wave[] = (() => {
   let seed = 9001;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i < N; i++) {
-    const len = 140 * Math.pow(2.4 / 140, i / (N - 1)) * (0.93 + rnd() * 0.14);
+    const len = 300 * Math.pow(5 / 300, i / (N - 1)) * (0.93 + rnd() * 0.14);
     // drei Richtungs-Cluster (0°, +25°, −15° zum Wind) → spitze, kreuzende Kämme statt weicher S-Kurven
     const CLUSTER = [0, 0.44, -0.26];
     const spread = 0.12 + 0.3 * (i / (N - 1));
@@ -124,7 +124,7 @@ export function shadingNormal(base: V2, footprint: F) {
 
   // Kräuselung: drei Oktaven animiertes Noise (Dezimeter bis Meter), nach Pixelgröße band-begrenzt wie die Wellen
   // feinste Lagen schwächer: dort ist die Textur am gröbsten abgetastet → sonst krisselig
-  const RIPS: readonly (readonly [typeof LAYERS.rip0, number])[] = [[LAYERS.rip0, 1], [LAYERS.rip1, 1], [LAYERS.rip2, 0.9], [LAYERS.rip3, 0.8], [LAYERS.rip4, 0.7], [LAYERS.rip5, 0.55]];
+  const RIPS: readonly (readonly [typeof LAYERS.rip0, number])[] = [[LAYERS.rip0, 0.8], [LAYERS.rip1, 0.6], [LAYERS.rip2, 0.4], [LAYERS.rip3, 0.2]];
   for (const [L, gain] of RIPS) {
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(L.scale)));
     roughness = roughness.add(oneMinus(vis).mul(0.5 * RIPPLE_SLOPE * RIPPLE_SLOPE));
