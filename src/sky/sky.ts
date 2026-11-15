@@ -1,7 +1,7 @@
 import { BackSide, Mesh, SphereGeometry } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
-  Fn, If, cameraProjectionMatrix, clamp, dot, float, max, mix, modelViewMatrix, normalize, positionLocal, pow, select,
+  Fn, If, cameraProjectionMatrix, clamp, dot, float, max, mix, modelViewMatrix, normalize, positionLocal, pow,
   smoothstep, uniform, vec2, vec3, vec4,
 } from 'three/tsl';
 import { fbm } from './noise';
@@ -22,8 +22,9 @@ export function skyBase(rd: Node<'vec3'>) {
   base = mix(base, vec3(1.0, 0.78, 0.55), pow(sd, 6).mul(h.oneMinus()).mul(0.55)); // warmer Dunst zur Sonne
   base = base.add(SUN_COL.mul(pow(sd, 18)).mul(0.45)); // Halo
   base = base.add(SUN_COL.mul(pow(sd, 400)).mul(3.0)); // enger Kern
-  const below = mix(horizon.mul(0.9), vec3(0.30, 0.42, 0.50), clamp(y.negate().mul(3), 0, 1));
-  return select(y.lessThan(0), below, base);
+  // Unter dem Horizont: STETIG aus der Horizontfarbe (kein Sprung bei y = 0), erst weit darunter Richtung Tiefblau.
+  // Dort sieht man den Himmel aus großer Höhe zwischen mathematischem Horizont und dem Rand des Ozean-Gitters.
+  return mix(base, vec3(0.30, 0.42, 0.50), smoothstep(0, 0.4, y.negate()).mul(0.6));
 }
 
 /**

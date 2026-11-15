@@ -76,9 +76,11 @@ export function createOcean() {
   const nh = max(dot(N, H), 0);
   col = col.add(SUN_COL.mul(pow(nh, 1200).mul(70).add(pow(nh, 140))).mul(fres).mul(4));
 
-  // Horizontdunst
-  const hz = skyBase(normalize(vec3(V.x.negate(), 0.02, V.z.negate())));
-  col = mix(col, hz, smoothstep(600, 9000, dist).mul(0.85));
+  // Horizontdunst in die Himmelsfarbe am Horizont derselben Himmelsrichtung. Bis 9 km sanft (max. 85 %), ab 15 km
+  // vollständig: der Rand des Gitters (~40 km) löst sich restlos auf, auch aus großer Höhe (keine Kante zum Himmel).
+  const hz = skyBase(normalize(vec3(V.x.negate(), 0.002, V.z.negate())));
+  const fogA = max(smoothstep(600, 9000, dist).mul(0.85), smoothstep(15000, 38000, dist));
+  col = mix(col, hz, fogA);
 
   // ── Ansicht von unten: Snell'sches Fenster + Totalreflexion (Port von infinity-ocean) ──
   const Nd = N.negate();
