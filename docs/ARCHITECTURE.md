@@ -65,9 +65,11 @@ Gemessen wird die **Arbeit**, nicht der Anzeigeabstand: `max(CPU-Zeit, GPU-Zeit)
 | Modul-Zeit | `budget.ms` | `<modul>: x ms > Budget y ms` |
 | Selbstprüfung | `probe().ok` | `<modul>: Selbstprüfung fehlgeschlagen (…)` |
 | Simulation | keine verworfenen Schritte | `n Simulationsschritte verworfen` |
+| Leerer Frame | Draw Calls > 0 | `Es wird nichts gezeichnet (0 Draw Calls)` – z. B. GPU verloren |
 
 - Verstöße erscheinen rot im HUD (unten links) und einmalig als `console.warn('[budget] …')`.
 - **F3** zeigt die Modul-Tabelle (ms, Budget, Calls, Probe-Info).
+- **Button „📋 Messung kopieren“** (unten rechts): misst 5 s, fasst Gerät, Frame-Zeiten (p50/p99/max), Draw Calls, Module und Verstöße als Text zusammen und kopiert ihn in die Zwischenablage (`core/report.ts`). Bei gesperrter Zwischenablage erscheint der Text zum Markieren.
 - `__dbg.report` (Dev) liefert den letzten Bericht als Objekt – Grundlage für Headless-Läufe.
 - **Engine-Ausgabe:** Mit Tonemapping rendert three in einen Zwischenpuffer und zeichnet 1 Vollbild-Quad zur Ausgabe. Dieser Call wird automatisch mitgezählt (`needsFrameBufferTarget`).
 - GPU-Zeit kommt über `trackTimestamp` (Timestamp-Query); ohne Feature steht im HUD „GPU n/a“.

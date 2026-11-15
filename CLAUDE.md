@@ -22,7 +22,7 @@ Pläne und Architektur: `docs/PLAN.md`, `docs/ARCHITECTURE.md` (zuerst lesen).
 - Keine Testdateien: Selbstprüfung per `probe()`, Budgets per Monitor.
 
 ## Debug
-`F3` Modul-Tabelle · HUD unten links (rot = Verstoß) · URL `?y=-5` Starthöhe (negativ = unter Wasser) ·
+`F3` Modul-Tabelle · Button „📋 Messung kopieren“ (unten rechts: 5 s messen, Text in die Zwischenablage) · HUD unten links (rot = Verstoß) · URL `?y=-5` Starthöhe (negativ = unter Wasser) ·
 Konsole (Dev): `__dbg.report`, `__dbg.get('ocean')`, `__dbg.modules`.
 
 ## Steuerung

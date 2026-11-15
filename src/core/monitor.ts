@@ -29,6 +29,27 @@ export interface Report {
   violations: string[];
 }
 
+/** Ergebnis einer längeren Messung (Button „Messung kopieren“) */
+export interface CaptureStats {
+  frames: number;
+  seconds: number;
+  fps: number;
+  workP50: number;
+  workP99: number;
+  workMax: number;
+  intervalP99: number;
+  cpuMs: number;
+  gpuMs: number | null;
+  drawCallsMax: number;
+  trianglesAvg: number;
+  computeCalls: number;
+  stepsPerFrame: number;
+  droppedSteps: number;
+  modules: { name: string; avg: number; peak: number; budget: Budget }[];
+}
+
+const CAPTURE_MAX = 6000; // Frames (reicht für 10 s bei 600 fps)
+
 function pct(sorted: Float32Array, p: number): number {
   return sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))]!;
 }
@@ -62,6 +83,13 @@ export class Monitor {
   private readonly active = new Set<string>();
   detailed = false;
   last: Report | null = null;
+
+  // ── Messung über mehrere Sekunden (allokiert nur hier, nicht im normalen Betrieb) ──
+  private cap: {
+    work: Float32Array; cpu: Float32Array; gpu: Float32Array; interval: Float32Array;
+    n: number; calls: number; tris: number; compute: number; steps: number; dropped: number;
+    modSum: Float64Array; modPeak: Float64Array; t0: number;
+  } | null = null;
 
   constructor(
     private readonly names: readonly string[],
@@ -99,6 +127,24 @@ export class Monitor {
     this.gpu[k] = gpuMs;
     this.work[k] = Math.max(cpuMs, gpuMs);
     this.interval[k] = intervalMs;
+    const c = this.cap;
+    if (c && c.n < CAPTURE_MAX) {
+      const j = c.n++;
+      c.cpu[j] = cpuMs;
+      c.gpu[j] = gpuMs;
+      c.work[j] = Math.max(cpuMs, gpuMs);
+      c.interval[j] = intervalMs;
+      c.calls = Math.max(c.calls, this.drawCalls);
+      c.tris += this.triangles;
+      c.compute = Math.max(c.compute, this.computeCalls);
+      c.steps += steps;
+      c.dropped += droppedSteps;
+      for (let m = 0; m < this.names.length; m++) {
+        const a = this.acc[m]!;
+        c.modSum[m] = c.modSum[m]! + a;
+        c.modPeak[m] = Math.max(c.modPeak[m]!, a);
+      }
+    }
     this.i = (k + 1) % MONITOR_WINDOW;
     this.n = Math.min(this.n + 1, MONITOR_WINDOW);
     this.steps += steps;
@@ -160,6 +206,7 @@ export class Monitor {
     const v = report.violations;
     if (report.workP99 > TARGET_WORK_MS) v.push(`Frame-Arbeit p99 ${report.workP99.toFixed(1)} ms > ${TARGET_WORK_MS.toFixed(1)} ms`);
     if (report.drawCalls > MAX_DRAW_CALLS) v.push(`Draw Calls ${report.drawCalls} > ${MAX_DRAW_CALLS}`);
+    if (report.drawCalls === 0 && declared > this.baseCalls) v.push('Es wird nichts gezeichnet (0 Draw Calls) – GPU verloren oder Renderer hängt?');
     if (report.drawCalls > declared) v.push(`Draw Calls ungezählt: gemessen ${report.drawCalls}, deklariert ${declared} (davon ${this.baseCalls} Engine-Ausgabe)`);
     if (this.droppedWindow > 0) v.push(`${this.droppedWindow} Simulationsschritte verworfen (Aufholen aufgegeben)`);
     for (const m of modules) {
@@ -178,6 +225,57 @@ export class Monitor {
 
     this.last = report;
     this.render(report);
+  }
+
+  /** Messung starten (ersetzt eine laufende) */
+  startCapture(): void {
+    const m = this.names.length;
+    this.cap = {
+      work: new Float32Array(CAPTURE_MAX), cpu: new Float32Array(CAPTURE_MAX), gpu: new Float32Array(CAPTURE_MAX),
+      interval: new Float32Array(CAPTURE_MAX), n: 0, calls: 0, tris: 0, compute: 0, steps: 0, dropped: 0,
+      modSum: new Float64Array(m), modPeak: new Float64Array(m), t0: performance.now(),
+    };
+  }
+
+  /** Messung beenden und auswerten (null = keine Frames, z. B. Tab im Hintergrund) */
+  finishCapture(): CaptureStats | null {
+    const c = this.cap;
+    this.cap = null;
+    if (!c || c.n === 0) return null;
+    const n = c.n;
+    const sorted = (a: Float32Array) => a.slice(0, n).sort();
+    const w = sorted(c.work);
+    const iv = sorted(c.interval);
+    let cpu = 0;
+    let gpu = 0;
+    let ivSum = 0;
+    for (let k = 0; k < n; k++) {
+      cpu += c.cpu[k]!;
+      gpu += c.gpu[k]!;
+      ivSum += c.interval[k]!;
+    }
+    return {
+      frames: n,
+      seconds: ivSum / 1000,
+      fps: ivSum > 0 ? (1000 * n) / ivSum : 0,
+      workP50: pct(w, 0.5),
+      workP99: pct(w, 0.99),
+      workMax: w[n - 1]!,
+      intervalP99: pct(iv, 0.99),
+      cpuMs: cpu / n,
+      gpuMs: gpu > 0 ? gpu / n : null,
+      drawCallsMax: c.calls,
+      trianglesAvg: c.tris / n,
+      computeCalls: c.compute,
+      stepsPerFrame: c.steps / n,
+      droppedSteps: c.dropped,
+      modules: this.names.map((name, m) => ({ name, avg: c.modSum[m]! / n, peak: c.modPeak[m]!, budget: this.budgets[m]! })),
+    };
+  }
+
+  /** Anzahl Draw Calls, die der Engine-Kern selbst macht */
+  get engineCalls(): number {
+    return this.baseCalls;
   }
 
   /** HUD neu zeichnen (z. B. nach F3), ohne die Auswertung zu verschieben */

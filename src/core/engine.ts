@@ -5,6 +5,7 @@ import { FIXED_DT, MAX_FIXED_STEPS, MAX_FRAME_DT, PROBE_INTERVAL } from './confi
 import { Input } from './input';
 import type { Context, Module, ProbeResult } from './module';
 import { Monitor, type Report } from './monitor';
+import { installReportButton } from './report';
 
 /**
  * Der Game Loop und die Modul-Registry.
@@ -112,6 +113,7 @@ export class Engine implements Context {
         this.monitor.refresh();
       }
     });
+    installReportButton(this);
     addEventListener('resize', () => this.resize());
     this.resize();
 
