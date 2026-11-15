@@ -76,8 +76,9 @@ export function underwaterColor(col: Node<'vec3'>, rd: Node<'vec3'>, dist: Node<
 export const isUnderwater = (): boolean => under.value > 0.001;
 
 /** pro Frame: Kameraposition relativ zur Wasseroberfläche (surfaceY = Höhe direkt über/unter der Kamera) */
-export function updateUnderwater(dt: number, camY: number, surfaceY: number): void {
-  time.value += dt;
+/** `t` = Clock.time */
+export function updateUnderwater(now: number, camY: number, surfaceY: number): void {
+  time.value = now;
   const t = Math.min(Math.max((camY - surfaceY + 0.015) / 0.03, 0), 1);
   under.value = 1 - t * t * (3 - 2 * t);
   camDepth.value = Math.max(-camY, 0);

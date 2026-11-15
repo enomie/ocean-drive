@@ -108,8 +108,9 @@ export function createOcean() {
   let time = 0;
   return {
     mesh,
-    update(dt: number, cam: Vector3) {
-      time += dt;
+    /** `t` = Clock.time */
+    update(t: number, cam: Vector3) {
+      time = t;
       updateWavePhases(time);
       camXZ.value.set(cam.x, cam.z);
     },

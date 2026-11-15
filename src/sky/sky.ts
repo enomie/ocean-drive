@@ -72,12 +72,11 @@ export function createSky() {
   mesh.frustumCulled = false;
   mesh.renderOrder = -10;
 
-  let clock = 0;
   return {
     mesh,
-    update(dt: number) {
-      clock += dt;
-      time.value = clock;
+    /** `t` = Clock.time */
+    update(t: number) {
+      time.value = t;
     },
   };
 }

@@ -29,6 +29,10 @@ export class BubbleSystem {
   private readonly dtU = uniform(0);
   private head = 0;
   private pending = 0;
+  /** Spawns, die wegen voller Frame-Warteschlange verworfen wurden (Probe prüft das) */
+  dropped = 0;
+  /** Bläschen, die seit dem Start erzeugt wurden */
+  spawned = 0;
 
   constructor(private readonly renderer: WebGPURenderer) {
     const pos = instancedArray(COUNT, 'vec3');
@@ -109,7 +113,11 @@ export class BubbleSystem {
 
   /** Ein Bläschen erzeugen (Weltkoordinaten; v = Anfangsgeschwindigkeit m/s; size = Durchmesser m; maxAge s) */
   spawn(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, maxAge: number): void {
-    if (this.pending >= MAX_SPAWN) return;
+    if (this.pending >= MAX_SPAWN) {
+      this.dropped++;
+      return;
+    }
+    this.spawned++;
     const a = this.spawnA.array as Float32Array;
     const b = this.spawnB.array as Float32Array;
     const o = this.pending * 4;

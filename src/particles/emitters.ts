@@ -1,5 +1,8 @@
 import { Vector3 } from 'three';
-import type { BubbleSystem } from './bubbles';
+/** Alles, was Bläschen entgegennimmt (BubbleSystem oder die api des Bläschen-Moduls) */
+export interface BubbleSink {
+  spawn(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, maxAge: number): void;
+}
 
 /**
  * Bläschen-Strom aus einer Kreisscheibe (Achse `dir`). Generisch: für einen Propeller setzt man pro Frame
@@ -21,7 +24,7 @@ export class StreamEmitter {
   private readonly u = new Vector3();
   private readonly w = new Vector3();
 
-  update(dt: number, sys: BubbleSystem): void {
+  update(dt: number, sys: BubbleSink): void {
     this.acc += this.rate * dt;
     if (this.acc < 1) return;
     // Orthonormalbasis zur Achse

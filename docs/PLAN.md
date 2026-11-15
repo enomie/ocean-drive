@@ -3,7 +3,8 @@
 Zusammenführung von **infinity-ocean** (Ozean, Schiffe, Fauna) und **suspension** (LOD-Terrain, Rapier-Fahrzeug-Baukasten) zu einem neuen, sauber aufgebauten Projekt.
 Ob Schiff oder Fahrzeug, wird per Dropdown gewählt. Das Projekt soll später zu einem großen Spiel anwachsen.
 
-Status: **Plan, noch kein Code.** Die beiden Altprojekte bleiben unverändert als Spender; Code wird kopiert (nicht per Submodule). Quell-Commits und Zuordnung Alt → Neu kommen in `docs/PORTING.md`.
+Status: **Gerüst steht** (Engine/Game Loop, Himmel, Ozean, Unterwasser, Partikel); Architektur siehe [ARCHITECTURE.md](ARCHITECTURE.md). Der Rest dieses Plans ist weiterhin Soll.
+Ursprünglicher Stand: Plan, noch kein Code. Die beiden Altprojekte bleiben unverändert als Spender; Code wird kopiert (nicht per Submodule). Quell-Commits und Zuordnung Alt → Neu kommen in `docs/PORTING.md`.
 
 ## 1. Harte Vorgaben
 

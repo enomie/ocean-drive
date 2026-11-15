@@ -82,8 +82,9 @@ export function createPlankton() {
 
   return {
     mesh,
-    update(dt: number): void {
-      time.value += dt;
+    /** `t` = Clock.time */
+    update(t: number): void {
+      time.value = t;
     },
   };
 }
