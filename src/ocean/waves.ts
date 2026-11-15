@@ -37,18 +37,18 @@ export const camH = uniform(0);
 const phase = WAVES.map(() => uniform(0));
 
 /**
- * Kräuselung nur fürs Shading: 8 kleine Sinuswellen (1,4 m … 12 cm) in zufälligen Richtungen rundum.
+ * Kräuselung nur fürs Shading: 5 kleine Sinuswellen (2,5 m … 40 cm) in zufälligen Richtungen rundum.
  * Bewusst KEIN Gitter-Noise: Value-Noise hat Zellkanten (→ „Raster“), Sinuswellen sind überall glatt.
  */
 const DETAIL = (() => {
   const out: { dx: number; dz: number; len: number; slope: number; speed: number; phase0: number }[] = [];
   let seed = 4242;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const M = 8;
+  const M = 5;
   for (let i = 0; i < M; i++) {
-    const len = 1.4 * Math.pow(0.12 / 1.4, i / (M - 1)) * (0.9 + rnd() * 0.2);
+    const len = 2.5 * Math.pow(0.4 / 2.5, i / (M - 1)) * (0.9 + rnd() * 0.2);
     const a = WIND + (rnd() * 2 - 1) * 1.6;
-    out.push({ dx: Math.cos(a), dz: Math.sin(a), len, slope: 0.05, speed: 0.4 + rnd() * 0.3, phase0: rnd() * 6.283 });
+    out.push({ dx: Math.cos(a), dz: Math.sin(a), len, slope: 0.045 * Math.sqrt(len / 2.5) + 0.01, speed: 0.4 + rnd() * 0.3, phase0: rnd() * 6.283 });
   }
   return out;
 })();
