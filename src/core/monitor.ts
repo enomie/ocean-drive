@@ -40,6 +40,9 @@ export interface CaptureStats {
   intervalP99: number;
   cpuMs: number;
   gpuMs: number | null;
+  /** GPU-Zeit nur der Render-Durchgänge / nur der Compute-Pässe (ms, null = nicht gemessen) */
+  gpuRenderMs: number | null;
+  gpuComputeMs: number | null;
   drawCallsMax: number;
   trianglesAvg: number;
   computeCalls: number;
@@ -87,7 +90,7 @@ export class Monitor {
   // ── Messung über mehrere Sekunden (allokiert nur hier, nicht im normalen Betrieb) ──
   private cap: {
     work: Float32Array; cpu: Float32Array; gpu: Float32Array; interval: Float32Array;
-    n: number; calls: number; tris: number; compute: number; steps: number; dropped: number;
+    n: number; calls: number; tris: number; compute: number; steps: number; dropped: number; gpuR: number; gpuC: number;
     modSum: Float64Array; modPeak: Float64Array; t0: number;
   } | null = null;
 
@@ -118,9 +121,10 @@ export class Monitor {
     const info = this.renderer.info;
     // GPU-Zeit des vorigen Frames (asynchron aufgelöst; 0 = nicht verfügbar)
     // bei Diagnose-Stresslast wird mehrfach gerendert: Render-Zeit ist dann die Summe, auf EINEN Durchgang zurückrechnen
-    const gpuMs = info.render.timestamp / renderRepeat + info.compute.timestamp;
-    this.drawCalls = info.render.drawCalls;
-    this.triangles = info.render.triangles;
+    const gpuRender = info.render.timestamp / renderRepeat;
+    const gpuMs = gpuRender + info.compute.timestamp;
+    this.drawCalls = info.render.drawCalls / renderRepeat; // Calls/Dreiecke zählen alle Wiederholungen: auf einen Durchgang zurück
+    this.triangles = info.render.triangles / renderRepeat;
     this.computeCalls = info.compute.frameCalls;
 
     const k = this.i;
@@ -135,6 +139,8 @@ export class Monitor {
       c.gpu[j] = gpuMs;
       c.work[j] = Math.max(cpuMs, gpuMs);
       c.interval[j] = intervalMs;
+      c.gpuR += gpuRender;
+      c.gpuC += info.compute.timestamp;
       c.calls = Math.max(c.calls, this.drawCalls);
       c.tris += this.triangles;
       c.compute = Math.max(c.compute, this.computeCalls);
@@ -233,7 +239,7 @@ export class Monitor {
     const m = this.names.length;
     this.cap = {
       work: new Float32Array(CAPTURE_MAX), cpu: new Float32Array(CAPTURE_MAX), gpu: new Float32Array(CAPTURE_MAX),
-      interval: new Float32Array(CAPTURE_MAX), n: 0, calls: 0, tris: 0, compute: 0, steps: 0, dropped: 0,
+      interval: new Float32Array(CAPTURE_MAX), n: 0, calls: 0, tris: 0, compute: 0, steps: 0, dropped: 0, gpuR: 0, gpuC: 0,
       modSum: new Float64Array(m), modPeak: new Float64Array(m), t0: performance.now(),
     };
   }
@@ -265,6 +271,8 @@ export class Monitor {
       intervalP99: pct(iv, 0.99),
       cpuMs: cpu / n,
       gpuMs: gpu > 0 ? gpu / n : null,
+      gpuRenderMs: c.gpuR > 0 ? c.gpuR / n : null,
+      gpuComputeMs: c.gpuC > 0 ? c.gpuC / n : null,
       drawCallsMax: c.calls,
       trianglesAvg: c.tris / n,
       computeCalls: c.compute,

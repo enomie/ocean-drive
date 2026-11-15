@@ -38,7 +38,10 @@ function format(engine: Engine, s: CaptureStats, device: string): string {
     `Arbeit p50 ${f(s.workP50)} / p99 ${f(s.workP99)} / max ${f(s.workMax)} ms (Ziel p99 ≤ ${f(TARGET_WORK_MS)})` +
       `  ${s.workP99 <= TARGET_WORK_MS ? '✓' : '✗'}`,
   );
-  lines.push(`CPU Ø ${f(s.cpuMs, 2)} ms · GPU Ø ${s.gpuMs === null ? 'n/a (keine Timestamp-Query)' : `${f(s.gpuMs, 2)} ms`}`);
+  lines.push(
+    `CPU Ø ${f(s.cpuMs, 2)} ms · GPU Ø ${s.gpuMs === null ? 'n/a (keine Timestamp-Query)' : `${f(s.gpuMs, 2)} ms`}` +
+      (s.gpuMs === null ? '' : ` (Render ${f(s.gpuRenderMs ?? 0, 2)} + Compute ${f(s.gpuComputeMs ?? 0, 2)})`),
+  );
   const declared = report?.declaredCalls ?? 0;
   lines.push(
     `Draw Calls ${s.drawCallsMax} (deklariert ${declared}, Limit ${MAX_DRAW_CALLS}, davon Engine ${engine.monitor.engineCalls})` +
@@ -130,7 +133,7 @@ const VARIANTS: { name: string; hide: string[]; scale: number; repeat: number }[
 ];
 
 async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<string> {
-  const rows: { name: string; gpu: number | null; p50: number; calls: number; mp: number; repeat: number }[] = [];
+  const rows: { name: string; render: number | null; compute: number | null; calls: number; mp: number }[] = [];
   const c = engine.renderer.domElement;
   for (let i = 0; i < VARIANTS.length; i++) {
     const v = VARIANTS[i]!;
@@ -145,11 +148,10 @@ async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<stri
     const st = engine.monitor.finishCapture();
     rows.push({
       name: v.name,
-      gpu: st?.gpuMs ?? null,
-      p50: st?.workP50 ?? 0,
+      render: st?.gpuRenderMs ?? null,
+      compute: st?.gpuComputeMs ?? null,
       calls: st?.drawCallsMax ?? 0,
       mp: (c.width * c.height) / 1e6,
-      repeat: v.repeat,
     });
   }
   engine.setHidden([]);
@@ -158,7 +160,7 @@ async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<stri
   engine.applyResolution();
 
   const byName = (n: string) => rows.find((r) => r.name === n);
-  const empty = byName('leer (Ausgabe + MSAA)')?.gpu ?? 0; // „leer“ liefert evtl. keine Zeit: dann 0
+  const empty = byName('leer (Ausgabe + MSAA)')?.render ?? 0; // „leer“ liefert evtl. keine Render-Zeit: dann 0
   const cam = engine.camera.position;
   const lines = [
     `Ocean Drive Diagnose · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
@@ -166,29 +168,33 @@ async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<stri
     `URL: ${location.pathname}${location.search} · Kamera y ${f(cam.y, 1)} ${cam.y < 0 ? '(unter Wasser)' : '(über Wasser)'}`,
     `Stresslast: ${STRESS}× Rendern pro Frame, GPU-Zeit ist durch ${STRESS} geteilt (= ein Durchgang)`,
     '',
-    'Variante                      GPU/Durchgang   Calls    MP    Kosten (− leer)',
+    'Variante                      Render     Compute   Calls   MP    Kosten Render (− leer)',
   ];
   for (const r of rows) {
-    const cost = r.name.startsWith('nur ') && r.gpu !== null ? `${f(r.gpu - empty, 2)} ms` : '';
-    lines.push(
-      `${r.name.padEnd(28)} ${(r.gpu === null ? 'n/a' : f(r.gpu, 2) + ' ms').padStart(12)}   ${String(r.calls).padStart(4)}   ${f(r.mp, 1).padStart(4)}   ${cost}`,
-    );
+    const cost = r.name.startsWith('nur ') && r.render !== null ? `${f(r.render - empty, 2)} ms` : '';
+    const fmt = (v: number | null): string => (v === null ? 'n/a' : `${f(v, 2)} ms`).padStart(9);
+    lines.push(`${r.name.padEnd(28)} ${fmt(r.render)} ${fmt(r.compute)}   ${String(r.calls).padStart(4)}   ${f(r.mp, 1).padStart(4)}   ${cost}`);
   }
   // eingebaute Gegenproben
-  const normal = byName('alles, normal (1×)')?.gpu;
-  const all = byName('alles')?.gpu;
-  const half = byName('alles bei 50 % Auflösung')?.gpu;
-  const parts = ['nur Himmel', 'nur Ozean', 'nur Partikel'].map((n) => byName(n)?.gpu);
+  const total = (n: string): number | null => {
+    const r = byName(n);
+    return r && (r.render !== null || r.compute !== null) ? (r.render ?? 0) + (r.compute ?? 0) : null;
+  };
+  const normal = total('alles, normal (1×)');
+  const all = total('alles');
+  const half = byName('alles bei 50 % Auflösung')?.render ?? null;
+  const allRender = byName('alles')?.render ?? null;
+  const parts = ['nur Himmel', 'nur Ozean', 'nur Partikel'].map((n) => byName(n)?.render ?? null);
   lines.push('');
   if (normal != null && all != null) {
     const ratio = normal / all;
-    lines.push(`Gegenprobe 1 (normal vs. Stress): ${f(normal, 2)} vs. ${f(all, 2)} ms → Verhältnis ${f(ratio, 2)} ${ratio > 0.7 && ratio < 1.4 ? '✓ konsistent' : '✗ NICHT konsistent (VSync/Takt verfälscht Normalbetrieb oder Timestamps summieren nicht)'}`);
+    lines.push(`Gegenprobe 1 (normal vs. Stress, Render + Compute): ${f(normal, 2)} vs. ${f(all, 2)} ms → Verhältnis ${f(ratio, 2)} ${ratio > 0.7 && ratio < 1.4 ? '✓ konsistent' : '✗ NICHT konsistent (VSync/Takt verfälscht Normalbetrieb oder Timestamps summieren nicht)'}`);
   }
-  if (all != null && parts.every((p) => p != null)) {
+  if (allRender != null && parts.every((p) => p !== null)) {
     const sum = (parts as number[]).reduce((a, b) => a + (b - empty), 0) + empty;
-    lines.push(`Gegenprobe 2 (Summe der Teile vs. alles): ${f(sum, 2)} vs. ${f(all, 2)} ms (Differenz = Überlappung, z. B. Himmel hinter dem Ozean per Tiefentest verworfen)`);
+    lines.push(`Gegenprobe 2 (Render: Summe der Teile vs. alles): ${f(sum, 2)} vs. ${f(allRender, 2)} ms (Differenz = Überlappung, z. B. Himmel hinter dem Ozean per Tiefentest verworfen)`);
   }
-  if (all != null && half != null) lines.push(`Gegenprobe 3 (Pixel): halbe Auflösung kostet ${f((half / all) * 100, 0)} % (≈ 50 % = pixelgebunden)`);
+  if (allRender != null && half != null) lines.push(`Gegenprobe 3 (Pixel, nur Render): halbe Auflösung kostet ${f((half / allRender) * 100, 0)} % (≈ 50 % = pixelgebunden)`);
   return lines.join('\n');
 }
 
