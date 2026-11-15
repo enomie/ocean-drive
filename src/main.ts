@@ -2,7 +2,7 @@ import { ACESFilmicToneMapping } from 'three';
 import { PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu';
 import { createSky } from './sky';
 import { createOcean } from './ocean';
-import { createPost } from './post';
+import { updateUnderwater } from './underwater';
 import { FlyCamera } from './camera/flyCamera';
 
 /** Erste Prüfung: ohne WebGPU wird nichts geladen. */
@@ -41,7 +41,6 @@ addEventListener('resize', () => {
 });
 
 const fly = new FlyCamera(camera);
-const post = createPost(renderer, scene, camera);
 
 const hud = document.getElementById('hud')!;
 let last = performance.now();
@@ -56,8 +55,8 @@ renderer.setAnimationLoop((now) => {
   sky.mesh.position.copy(camera.position); // Kuppel folgt der Kamera
   sky.update(dt);
   ocean.update(dt, camera.position);
-  post.update(dt, ocean.heightAt(camera.position.x, camera.position.z, camera.position));
-  post.render();
+  updateUnderwater(dt, camera.position.y, ocean.heightAt(camera.position.x, camera.position.z, camera.position));
+  renderer.render(scene, camera);
 
   acc += dt;
   frames++;

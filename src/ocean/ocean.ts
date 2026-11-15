@@ -1,10 +1,12 @@
 import { BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, type Vector3 } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import {
-  abs, cameraPosition, clamp, dot, exp, frontFacing, length, max, mix, normalize, pow, reflect, refract, select,
-  smoothstep, varying, vec3,
+  Fn, If, abs, cameraPosition, clamp, dot, exp, frontFacing, length, max, mix, normalize, pow, reflect, refract,
+  select, smoothstep, varying, vec3, vec4,
 } from 'three/tsl';
-import { SUN_COL, skyBase, sunDir } from '../sky';
+import { skyBase } from '../sky';
+import { SUN_COL, sunDir } from '../core/sun';
+import { under, underwaterColor } from '../underwater';
 import { camXZ, gerstner, updateWavePhases, waveHeight } from './waves';
 
 /** Polares Gitter um die Kamera: dicht nah, grob zum Horizont (~40 km) */
@@ -89,7 +91,16 @@ export function createOcean() {
 
   const material = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false });
   material.positionNode = g.position;
-  material.colorNode = select(frontFacing, col, colBelow);
+  // Vorderseite = von oben, Rückseite = von unten (dort läuft der Unterwasser-Pfad inkl. Nebel/Lichtschäfte)
+  material.colorNode = Fn(() => {
+    const out = vec3(0).toVar();
+    If(frontFacing, () => {
+      out.assign(col);
+    }).Else(() => {
+      out.assign(mix(colBelow, underwaterColor(colBelow, V.negate(), dist), under));
+    });
+    return vec4(out, 1);
+  })();
 
   const mesh = new Mesh(polarGrid(260, 360, 1.032), material);
   mesh.frustumCulled = false;

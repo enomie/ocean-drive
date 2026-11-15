@@ -1,17 +1,13 @@
-import { BackSide, Mesh, SphereGeometry, Vector3 } from 'three';
+import { BackSide, Mesh, SphereGeometry } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
-  clamp, dot, max, mix, normalize, positionLocal, pow, select, smoothstep, uniform, vec2, vec3, vec4,
+  Fn, If, clamp, dot, float, max, mix, normalize, positionLocal, pow, select, smoothstep, uniform, vec2, vec3, vec4,
 } from 'three/tsl';
 import { fbm } from './noise';
+import { SUN_COL, SUN_DIR, sunDir } from '../core/sun';
+import { under, underwaterColor } from '../underwater';
 
-/** Sonnenrichtung (wie infinity-ocean) */
-export const SUN_DIR = new Vector3(-0.55, 0.22, -0.8).normalize();
-
-export const SUN_COL = vec3(1.0, 0.86, 0.68);
-
-/** Sonnenrichtung als Uniform, gemeinsam für Himmel und Ozean */
-export const sunDir = uniform(SUN_DIR.clone());
+export { SUN_COL, SUN_DIR, sunDir };
 
 /** Himmel ohne Wolken und Sonnenscheibe (auch für Spiegelung und Horizontdunst) */
 export function skyBase(rd: Node<'vec3'>) {
@@ -60,7 +56,17 @@ export function createSky() {
   const col = mix(base.add(disk), lit, cloudA);
 
   const material = new MeshBasicNodeMaterial({ side: BackSide, depthWrite: false, fog: false });
-  material.colorNode = vec4(col, 1);
+  // Über Wasser: Himmel. Unter Wasser: nur der Wasserkörper (Wolken-Noise wird dann gar nicht berechnet).
+  material.colorNode = Fn(() => {
+    const out = vec3(0).toVar();
+    If(under.lessThan(0.999), () => {
+      out.assign(col);
+    });
+    If(under.greaterThan(0), () => {
+      out.assign(mix(out, underwaterColor(vec3(0), rd, float(1e4)), under));
+    });
+    return vec4(out, 1);
+  })();
 
   const mesh = new Mesh(new SphereGeometry(30000, 48, 24), material);
   mesh.frustumCulled = false;
