@@ -6,6 +6,7 @@ import { Input } from './input';
 import type { Context, Module, ProbeResult } from './module';
 import { Monitor, type Report } from './monitor';
 import { ORIGIN, originModule, originShiftFor } from './origin';
+import { updateView } from './view';
 import { installReportButton } from './report';
 
 /**
@@ -213,6 +214,7 @@ export class Engine implements Context {
     const mon = this.monitor;
     const mods = this.modules;
 
+    updateView(this.renderer, this.camera); // Pixelgröße/Fov für Shader (Partikel, Ozean-LOD)
     // 1b. Floating Origin: Kamera zu weit vom lokalen Nullpunkt → alles verschieben (vor jeder Simulation)
     this.applyOriginShift(mon);
 

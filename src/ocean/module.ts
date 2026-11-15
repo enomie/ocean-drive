@@ -1,6 +1,6 @@
 import type { Context, Module } from '../core/module';
 import { createOcean } from './ocean';
-import { WAVES } from './waves';
+import { shadingLod, WAVES } from './waves';
 
 export interface OceanApi {
   /** Höhe der Wasseroberfläche über Weltposition (x, z) in m (CPU-Spiegel der GPU-Wellen) */
@@ -34,15 +34,27 @@ export function oceanModule(): Module<OceanApi> {
         lo = Math.min(lo, h);
         hi = Math.max(hi, h);
       }
+      // Shading-LOD: mit wachsender Pixelgröße nehmen aufgelöste Wellen ab und Rauheit zu (Monotonie), nichts geht verloren
+      let lodOk = true;
+      let prev = shadingLod(0.01);
+      for (const fp of [0.1, 1, 10, 100, 1000, 1e5]) {
+        const cur = shadingLod(fp);
+        if (cur.resolved > prev.resolved || cur.m2 < prev.m2 - 1e-12) lodOk = false;
+        prev = cur;
+      }
+      const total = WAVES.reduce((a, w) => a + 0.5 * ((6.2831853 / w.len) * w.amp) ** 2, 0);
+      lodOk = lodOk && Math.abs(prev.m2 - total) < 1e-9 && shadingLod(0.01).resolved === WAVES.length; // ganz grob: alle Neigung als Rauheit
+      const lodMid = shadingLod(10);
       const e = ocean.errors(ctx.camera.position);
       const rangeOk = Number.isFinite(lo + hi) && lo >= -maxH * 1.05 && hi <= maxH * 1.05;
       const shiftOk = e.shift < 1e-6; // Origin-Verschiebung ändert die Wasserhöhe nicht
       const mirrorOk = e.mirror < 5e-3; // Shader-Formel (float32) = CPU-Formel (double)
       return {
-        ok: rangeOk && shiftOk && mirrorOk,
+        ok: rangeOk && shiftOk && mirrorOk && lodOk,
         info:
           `h ${lo.toFixed(1)}…${hi.toFixed(1)} m · Shift-Δ ${e.shift.toExponential(0)} · Shader-Δ ${e.mirror.toExponential(0)}` +
-          `${rangeOk ? '' : ' · Höhe außerhalb Bereich'}${shiftOk ? '' : ' · SHIFT-INVARIANZ VERLETZT'}${mirrorOk ? '' : ' · SHADER≠CPU'}`,
+          ` · LOD @10 m/Pixel: ${lodMid.resolved}/${WAVES.length} Wellen, m² ${lodMid.m2.toFixed(3)}` +
+          `${rangeOk ? '' : ' · Höhe außerhalb Bereich'}${shiftOk ? '' : ' · SHIFT-INVARIANZ VERLETZT'}${mirrorOk ? '' : ' · SHADER≠CPU'}${lodOk ? '' : ' · LOD NICHT MONOTON'}`,
       };
     },
     dispose() {

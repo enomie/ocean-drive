@@ -8,7 +8,8 @@ import { skyBase } from '../sky';
 import { SUN_COL, sunDir } from '../core/sun';
 import { under, underwaterColor } from '../underwater';
 import { finishColor } from '../core/output';
-import { camXZ, gerstner, shaderMirrorError, shiftInvarianceError, updateWavePhases, waveHeight } from './waves';
+import { camH, camXZ, gerstner, shaderMirrorError, shadingNormal, shiftInvarianceError, updateWavePhases, waveHeight } from './waves';
+import { pixelAngle } from '../core/view';
 
 /** Polares Gitter um die Kamera: dicht nah, grob zum Horizont (~40 km) */
 function polarGrid(rings: number, segs: number, growth: number): BufferGeometry {
@@ -44,58 +45,66 @@ function polarGrid(rings: number, segs: number, growth: number): BufferGeometry 
 export function createOcean() {
   const g = gerstner();
   const vWorld = varying(g.position, 'vWorld');
-  const vNormal = varying(g.normal, 'vNormal');
+  const vBase = varying(g.base, 'vBase');
   const vHeight = varying(g.height, 'vHeight');
-
-  const toCam = cameraPosition.sub(vWorld);
-  const dist = length(toCam);
-  const V = toCam.div(dist);
-  const L = sunDir;
-  // Normale zum Horizont hin glätten (verhindert Glitzern/Aliasing in der Ferne)
-  const N = normalize(mix(normalize(vNormal), vec3(0, 1, 0), smoothstep(400, 5000, dist).mul(0.6)));
-
-  const NdV = max(dot(N, V), 0);
-  const fres = pow(NdV.oneMinus(), 5).mul(0.98).add(0.02);
-  const R = reflect(V.negate(), N);
-  const refl = skyBase(normalize(vec3(R.x, abs(R.y).add(0.01), R.z)));
-
-  // Körperfarbe + Streulicht in dünnen, besonnten Kämmen
-  const deep = vec3(0.004, 0.032, 0.062);
-  const sss = vec3(0.02, 0.32, 0.29);
-  const sunBack = pow(clamp(dot(V.negate(), L).mul(0.5).add(0.5), 0, 1), 3);
-  const crest = clamp(vHeight.mul(0.8).add(0.35), 0, 1.6);
-  const lit = max(dot(N, L), 0).mul(0.6).add(0.4);
-  const body = deep
-    .add(sss.mul(sunBack.add(0.2)).mul(crest).mul(lit))
-    .add(vec3(0.01, 0.045, 0.055).mul(max(L.y, 0)));
-
-  let col = mix(body, refl, fres);
-
-  // Sonnenglanz (enger Kern + breiter Hof)
-  const H = normalize(L.add(V));
-  const nh = max(dot(N, H), 0);
-  col = col.add(SUN_COL.mul(pow(nh, 1200).mul(70).add(pow(nh, 140))).mul(fres).mul(4));
-
-  // Horizontdunst in die Himmelsfarbe am Horizont derselben Himmelsrichtung. Bis 9 km sanft (max. 85 %), ab 15 km
-  // vollständig: der Rand des Gitters (~40 km) löst sich restlos auf, auch aus großer Höhe (keine Kante zum Himmel).
-  const hz = skyBase(normalize(vec3(V.x.negate(), 0.002, V.z.negate())));
-  const fogA = max(smoothstep(600, 9000, dist).mul(0.85), smoothstep(15000, 38000, dist));
-  col = mix(col, hz, fogA);
-
-  // ── Ansicht von unten: Snell'sches Fenster + Totalreflexion (Port von infinity-ocean) ──
-  const Nd = N.negate();
-  const T = refract(V.negate(), Nd, 1.33);
-  const Rr = reflect(V.negate(), Nd);
-  const tir = mix(vec3(0, 0.025, 0.05), vec3(0.03, 0.22, 0.27), exp(Rr.y.mul(2.5)));
-  const cosT = clamp(dot(V, Nd), 0, 1);
-  const trans = pow(cosT.oneMinus(), 5).mul(0.9).oneMinus();
-  const window = skyBase(normalize(T.add(1e-6))).mul(trans).mul(vec3(0.75, 0.95, 1.0));
-  const colBelow = select(dot(T, T).lessThan(0.01), tir, mix(tir, window, smoothstep(0, 0.25, cosT)));
 
   const material = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false });
   material.positionNode = g.position;
-  // Vorderseite = von oben, Rückseite = von unten (dort läuft der Unterwasser-Pfad inkl. Nebel/Lichtschäfte)
+  // Alles Fragment-Shading in einem Fn: das Shading-LOD braucht Variablen/Verzweigungen (nur dort erlaubt)
   material.colorNode = Fn(() => {
+    const toCam = cameraPosition.sub(vWorld);
+    const dist = length(toCam);
+    const V = toCam.div(dist);
+    const L = sunDir;
+
+    // ── Shading-LOD: Normale pro Pixel, Wellen nach Pixelgröße band-begrenzt, Rest → Rauheit ──
+    const footprint = dist.mul(pixelAngle).div(max(V.y.abs(), 0.15)); // Pixelgröße am Boden (m), gedehnt bei flachem Blick
+    const sh = shadingNormal(vBase, footprint);
+    const N = sh.normal;
+    const m2 = sh.roughness.add(0.0008); // mittlere quadratische Neigung: unaufgelöste Wellen + Mikro-Rauheit
+
+    const NdV = max(dot(N, V), 0);
+    const fres = pow(NdV.oneMinus(), 5).mul(0.98).add(0.02);
+    const R = reflect(V.negate(), N);
+    const refl = skyBase(normalize(vec3(R.x, abs(R.y).add(0.01), R.z)));
+
+    // Körperfarbe + Streulicht in dünnen, besonnten Kämmen
+    const deep = vec3(0.004, 0.032, 0.062);
+    const sss = vec3(0.02, 0.32, 0.29);
+    const sunBack = pow(clamp(dot(V.negate(), L).mul(0.5).add(0.5), 0, 1), 3);
+    const crest = clamp(vHeight.mul(0.8).add(0.35), 0, 1.6);
+    const lit = max(dot(N, L), 0).mul(0.6).add(0.4);
+    const body = deep
+      .add(sss.mul(sunBack.add(0.2)).mul(crest).mul(lit))
+      .add(vec3(0.01, 0.045, 0.055).mul(max(L.y, 0)));
+    let col = mix(body, refl, fres);
+
+    // Sonnenglanz: Beckmann-Verteilung mit der Rauheit. Nah/aufgelöst: enger, heller Kern (m² ≈ 1e-3).
+    // Aus großer Höhe wächst m², der Glanz wird zu einem breiten, schwächeren Glitzerpfad (Energie bleibt erhalten).
+    const H = normalize(L.add(V));
+    const nh = clamp(dot(N, H), 0.001, 1);
+    const nh2 = nh.mul(nh);
+    const tan2 = nh2.oneMinus().div(nh2);
+    const D = exp(tan2.negate().div(m2)).div(m2.mul(Math.PI).mul(nh2).mul(nh2));
+    col = col.add(SUN_COL.mul(D).mul(fres).mul(0.7));
+
+    // Horizontdunst in die Himmelsfarbe am Horizont derselben Himmelsrichtung. Bis 9 km sanft (max. 85 %), ab 15 km
+    // vollständig: der Rand des Gitters (~40 km) löst sich restlos auf, auch aus großer Höhe (keine Kante zum Himmel).
+    const hz = skyBase(normalize(vec3(V.x.negate(), 0.002, V.z.negate())));
+    const fogA = max(smoothstep(600, 9000, dist).mul(0.85), smoothstep(15000, 38000, dist));
+    col = mix(col, hz, fogA);
+
+    // ── Ansicht von unten: Snell'sches Fenster + Totalreflexion (Port von infinity-ocean) ──
+    const Nd = N.negate();
+    const T = refract(V.negate(), Nd, 1.33);
+    const Rr = reflect(V.negate(), Nd);
+    const tir = mix(vec3(0, 0.025, 0.05), vec3(0.03, 0.22, 0.27), exp(Rr.y.mul(2.5)));
+    const cosT = clamp(dot(V, Nd), 0, 1);
+    const trans = pow(cosT.oneMinus(), 5).mul(0.9).oneMinus();
+    const window = skyBase(normalize(T.add(1e-6))).mul(trans).mul(vec3(0.75, 0.95, 1.0));
+    const colBelow = select(dot(T, T).lessThan(0.01), tir, mix(tir, window, smoothstep(0, 0.25, cosT)));
+
+    // Vorderseite = von oben, Rückseite = von unten (dort läuft der Unterwasser-Pfad inkl. Nebel/Lichtschäfte)
     const out = vec3(0).toVar();
     If(frontFacing, () => {
       out.assign(col);
@@ -117,14 +126,15 @@ export function createOcean() {
       time = t;
       updateWavePhases(time);
       camXZ.value.set(cam.x, cam.z);
+      camH.value = Math.abs(cam.y);
     },
     /** Höhe der Oberfläche über (x, z); Kamera-Abstand für die Fernausblendung */
     heightAt(x: number, z: number, cam: Vector3): number {
-      return waveHeight(x, z, time, cam.x, cam.z);
+      return waveHeight(x, z, time, cam.x, cam.z, Math.abs(cam.y));
     },
     /** Selbstprüfungen für Floating Origin und GPU-Spiegel (siehe waves.ts) */
     errors(cam: Vector3): { shift: number; mirror: number } {
-      return { shift: shiftInvarianceError(time, cam.x, cam.z), mirror: shaderMirrorError(time) };
+      return { shift: shiftInvarianceError(time, cam.x, cam.z, Math.abs(cam.y)), mirror: shaderMirrorError(time) };
     },
   };
 }

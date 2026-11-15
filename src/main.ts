@@ -7,7 +7,7 @@ import { flyCameraModule } from './camera';
 import { skyModule } from './sky';
 import { oceanModule } from './ocean';
 import { underwaterModule } from './underwater';
-import { bubblesModule, particlesModule, planktonModule } from './particles';
+import { bubblesModule, planktonModule } from './particles';
 import { demoStreamModule } from './demo/streamModule';
 
 /** Erste Prüfung: ohne WebGPU wird nichts geladen. */
@@ -50,7 +50,6 @@ const engine = new Engine(renderer, scene, camera, params.has('mp') ? { maxPixel
   .add(skyModule())
   .add(oceanModule())
   .add(underwaterModule())
-  .add(particlesModule())
   .add(planktonModule())
   .add(bubblesModule())
   .add(demoStreamModule());

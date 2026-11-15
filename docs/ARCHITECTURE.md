@@ -79,6 +79,16 @@ Gemessen wird die **Arbeit**, nicht der Anzeigeabstand: `max(CPU-Zeit, GPU-Zeit)
 - GPU-Zeit kommt über `trackTimestamp` (Timestamp-Query); ohne Feature steht im HUD „GPU n/a“.
 - **Die deklarierten Budgets sind Schätzungen**, bis sie auf dem Referenzgerät (Chrome, MacBook M1, 120 Hz) gemessen wurden. Der Monitor zeigt dann, was nachgezogen werden muss.
 
+## Ozean-LOD (`ocean/waves.ts`, `ocean/ocean.ts`)
+
+Zwei getrennte LODs, beide höhenbewusst:
+
+- **Geometrie** (Vertex): Die Wellen blenden nach dem **3D-Abstand** zur Kamera aus (5·L … 13·L), nicht nach dem horizontalen. Aus großer Höhe ist die Verschiebung daher flach (kein Aliasing durch Wellen, die kleiner als ein Pixel sind). Das Gitter selbst ist polar um die Kamera (dicht nah, grob fern, ~40 km); an seinem Rand geht der Dunst ab 15 km vollständig in die Horizontfarbe über.
+- **Shading** (Fragment): Die Normale wird **pro Pixel** aus demselben 16-Wellen-Spektrum berechnet (`shadingNormal`). Eine Welle zählt als aufgelöst, wenn sie ≥ ~10 Pixel lang erscheint, und fällt ab ~4 Pixeln weg (Pixelgröße = Entfernung × Pixelwinkel / Neigung, `core/view.ts`). **Weggelassene Wellen gehen nicht verloren:** ihre mittlere quadratische Neigung ½·(k·A)² wird zur Rauheit m², die den Sonnenglanz (Beckmann-Verteilung) verbreitert. Nah: enger, heller Kern (m² ≈ 1e-3); aus großer Höhe: breiter, schwächerer Glitzerpfad. So bleibt das Meer aus jeder Höhe ein Meer statt glatter Flecken.
+- **Selbstprüfung** (`ocean`-Probe): bei wachsender Pixelgröße nehmen aufgelöste Wellen nie zu und die Rauheit nie ab; bei „unendlich“ ist die ganze Neigung Rauheit. Das HUD zeigt z. B. `LOD @10 m/Pixel: 5/16 Wellen, m² 0.011`.
+- **Kosten:** Das Fragment-Shading wertet pro Pixel bis zu 16 Wellen (sin/cos) aus, aufgelöste nur; Messung steht aus.
+- **Noch nicht enthalten:** Schaum (Jacobi), Detail-Kräuselung (Noise) im Nahbereich, Wasserfarbe nach Tiefe.
+
 ## Floating Origin (`core/origin.ts`)
 
 **Absolut = lokal + `ORIGIN`.** Szene, Shader und Physik arbeiten in LOKALEN Koordinaten (klein, float32-genau); `ORIGIN` ist ein double und wird nur von der Engine geändert. Ab 1024 m Kameraabstand zum Nullpunkt verschiebt die Engine Kamera und `ORIGIN` um ein Vielfaches von 64 m und ruft `shift(dx, dz)` an jedem Modul auf (am Frame-Anfang, vor allen Updates).

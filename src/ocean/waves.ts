@@ -1,4 +1,4 @@
-import { cos, float, length, oneMinus, positionLocal, sin, smoothstep, uniform, vec2, vec3 } from 'three/tsl';
+import { If, cos, dot, float, max, oneMinus, positionLocal, sin, smoothstep, sqrt, uniform, vec2, vec3 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 import { ORIGIN } from '../core/origin';
 
@@ -29,6 +29,8 @@ export const WAVES: readonly Wave[] = (() => {
 
 /** Kameraposition (xz) – das Gitter folgt der Kamera, die Wellen hängen an Weltkoordinaten */
 export const camXZ = uniform(vec2(0, 0));
+/** Höhe der Kamera über/unter dem Meeresspiegel (Betrag, m): Abstände zur Ausblendung sind 3D, nicht nur horizontal */
+export const camH = uniform(0);
 const phase = WAVES.map(() => uniform(0));
 
 /**
@@ -74,14 +76,47 @@ function wavesAt(base: V2, dist: F) {
   return { dx, dy, dz, normal: vec3(nx, ny, nz) };
 }
 
+/**
+ * Shading-LOD: Normale PRO PIXEL aus demselben Spektrum (Fragment-Stufe), band-begrenzt nach Pixelgröße.
+ * Eine Welle zählt als aufgelöst, wenn sie ≥ ~10 Pixel lang erscheint (voll) und fällt ab ~4 Pixeln weg.
+ * Weggelassene Wellen gehen nicht verloren: ihre Steilheit wird als Rauheit `m²` (mittlere quadratische Neigung)
+ * zurückgegeben und verbreitert später den Sonnenglanz – aus großer Höhe bleibt das Meer ein Meer statt glatter Flecken.
+ * @param base      Weltposition (lokal) des Gitterpunkts, xz
+ * @param footprint Pixelgröße am Boden in Metern (Entfernung × Pixelwinkel / Neigung)
+ */
+export function shadingNormal(base: V2, footprint: F) {
+  const nx = float(0).toVar();
+  const nz = float(0).toVar();
+  const ny = float(1).toVar();
+  let roughness: F = float(0);
+  WAVES.forEach((w, i) => {
+    const k = (Math.PI * 2) / w.len;
+    const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(w.len)));
+    // nicht aufgelöster Anteil → Rauheit: mittlere quadratische Neigung einer Sinuswelle = ½ (k·A)²
+    roughness = roughness.add(oneMinus(vis).mul(0.5 * (k * w.amp) * (k * w.amp)));
+    If(vis.greaterThan(0.002), () => {
+      const A = vis.mul(w.amp);
+      const f = base.x.mul(w.dx * k).add(base.y.mul(w.dz * k)).add(phase[i]!);
+      const Q = STEEPNESS / (k * w.amp * N);
+      const AC = A.mul(cos(f));
+      nx.subAssign(AC.mul(k * w.dx));
+      nz.subAssign(AC.mul(k * w.dz));
+      ny.subAssign(A.mul(sin(f)).mul(Q * k));
+    });
+  });
+  return { normal: vec3(nx, ny, nz).normalize(), roughness: max(roughness, 0) };
+}
+
 /** Ozean-Vertex: Gitterpunkt relativ zur Kamera → verschobene Weltposition, Normale, Höhe */
 export function gerstner() {
   const base = positionLocal.xz.add(camXZ);
-  const w = wavesAt(base, length(positionLocal.xz));
+  const w = wavesAt(base, sqrt(dot(positionLocal.xz, positionLocal.xz).add(camH.mul(camH)))); // 3D-Abstand zur Kamera
   return {
     position: vec3(base.x.add(w.dx), w.dy, base.y.add(w.dz)),
     normal: w.normal.normalize(),
     height: w.dy,
+    /** Weltposition (lokal) des unverschobenen Gitterpunkts – Eingabe für die Pixel-Normalen */
+    base,
   };
 }
 
@@ -90,7 +125,8 @@ export function gerstner() {
  * Fixpunkt-Iteration über die horizontale Verschiebung. Für Partikel, Fische, später Schiffe auf der GPU.
  */
 export function surfaceHeight(xz: V2) {
-  const dist = length(xz.sub(camXZ));
+  const d = xz.sub(camXZ);
+  const dist = sqrt(dot(d, d).add(camH.mul(camH)));
   let p: V2 = xz;
   for (let i = 0; i < 3; i++) {
     const w = wavesAt(p, dist);
@@ -108,11 +144,11 @@ function smooth(a: number, b: number, x: number): number {
 }
 
 /** Verschiebung am unverschobenen Punkt (px, pz) – dieselbe Mathematik wie `gerstner()` */
-function displacement(px: number, pz: number, t: number, camX: number, camZ: number, ox: number, oz: number): [number, number, number] {
+function displacement(px: number, pz: number, t: number, camX: number, camZ: number, camH: number, ox: number, oz: number): [number, number, number] {
   let dx = 0;
   let dy = 0;
   let dz = 0;
-  const dist = Math.hypot(px - camX, pz - camZ);
+  const dist = Math.hypot(px - camX, pz - camZ, camH); // 3D-Abstand wie auf der GPU
   for (const w of WAVES) {
     const k = (Math.PI * 2) / w.len;
     const A = w.amp * (1 - smooth(w.len * 5, w.len * 13, dist));
@@ -133,15 +169,15 @@ function displacement(px: number, pz: number, t: number, camX: number, camZ: num
  * Höhe der Wasseroberfläche über der LOKALEN Position (x, z): Fixpunkt-Iteration über die horizontale Verschiebung.
  * `ox`/`oz` = Ursprung (Standard: der aktuelle); `camX`/`camZ` = lokale Kameraposition für die Fernausblendung.
  */
-export function waveHeight(x: number, z: number, t: number, camX: number, camZ: number, ox = ORIGIN.x, oz = ORIGIN.z): number {
+export function waveHeight(x: number, z: number, t: number, camX: number, camZ: number, camH: number, ox = ORIGIN.x, oz = ORIGIN.z): number {
   let px = x;
   let pz = z;
   for (let i = 0; i < 4; i++) {
-    const d = displacement(px, pz, t, camX, camZ, ox, oz);
+    const d = displacement(px, pz, t, camX, camZ, camH, ox, oz);
     px = x - d[0];
     pz = z - d[2];
   }
-  return displacement(px, pz, t, camX, camZ, ox, oz)[1];
+  return displacement(px, pz, t, camX, camZ, camH, ox, oz)[1];
 }
 
 const PROBE_POINTS: readonly (readonly [number, number])[] = [
@@ -152,13 +188,13 @@ const PROBE_POINTS: readonly (readonly [number, number])[] = [
  * Selbstprüfung 1 (Floating Origin): Eine Verschiebung um (640, −384) darf die Wasserhöhe an derselben ABSOLUTEN Stelle
  * nicht ändern. Gibt den größten Unterschied in Metern zurück (soll ~1e-9 sein).
  */
-export function shiftInvarianceError(t: number, camX: number, camZ: number): number {
+export function shiftInvarianceError(t: number, camX: number, camZ: number, camH: number): number {
   const DX = 640;
   const DZ = -384;
   let err = 0;
   for (const [x, z] of PROBE_POINTS) {
-    const a = waveHeight(x, z, t, camX, camZ);
-    const b = waveHeight(x - DX, z - DZ, t, camX - DX, camZ - DZ, ORIGIN.x + DX, ORIGIN.z + DZ);
+    const a = waveHeight(x, z, t, camX, camZ, camH);
+    const b = waveHeight(x - DX, z - DZ, t, camX - DX, camZ - DZ, camH, ORIGIN.x + DX, ORIGIN.z + DZ);
     err = Math.max(err, Math.abs(a - b));
   }
   return err;
@@ -181,4 +217,20 @@ export function shaderMirrorError(t: number): number {
     }
   });
   return err;
+}
+
+/**
+ * CPU-Spiegel der Wellenauswahl im Shading-LOD (`shadingNormal`): wie viele Wellen sind bei dieser Pixelgröße (m) noch
+ * aufgelöst, und wie groß ist die Rauheit m² der weggelassenen. Für Selbstprüfung und HUD.
+ */
+export function shadingLod(footprint: number): { resolved: number; m2: number } {
+  let resolved = 0;
+  let m2 = 0;
+  for (const w of WAVES) {
+    const k = (Math.PI * 2) / w.len;
+    const vis = 1 - smooth(0.1, 0.25, footprint / w.len);
+    if (vis > 0.002) resolved++;
+    m2 += (1 - vis) * 0.5 * (k * w.amp) * (k * w.amp);
+  }
+  return { resolved, m2 };
 }

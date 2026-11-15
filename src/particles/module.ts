@@ -2,34 +2,14 @@ import type { Context, Module } from '../core/module';
 import { ORIGIN } from '../core/origin';
 import { isUnderwater } from '../underwater';
 import { BubbleSystem } from './bubbles';
-import { updateParticleView } from './common';
 import { createPlankton } from './plankton';
-
-/** gemeinsame Sichtparameter für Partikel (Mindestgröße in px) */
-export function particlesModule(): Module {
-  let ctx: Context;
-  return {
-    name: 'particles',
-    deps: ['camera'],
-    budget: { ms: 0.02 },
-    init(c) {
-      ctx = c;
-    },
-    update() {
-      updateParticleView(ctx.renderer, ctx.camera);
-    },
-    probe() {
-      return { ok: ctx.renderer.domElement.height > 0 };
-    },
-  };
-}
 
 export function planktonModule(): Module {
   const plankton = createPlankton();
   let ctx: Context;
   return {
     name: 'plankton',
-    deps: ['particles', 'underwater', 'ocean'],
+    deps: ['underwater', 'ocean'],
     budget: { ms: 0.05, drawCalls: 1 },
     init(c) {
       ctx = c;
@@ -59,7 +39,7 @@ export function bubblesModule(): Module<BubblesApi> {
   let lastDropped = 0;
   return {
     name: 'bubbles',
-    deps: ['particles', 'ocean', 'underwater'],
+    deps: ['ocean', 'underwater'],
     budget: { ms: 0.3, drawCalls: 1 },
     get api() {
       return { spawn: system.spawn.bind(system) };
