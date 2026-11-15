@@ -95,7 +95,7 @@ export function shadingNormal(base: V2, footprint: F) {
 
   // Muster aufbrechen (nur Shading): ein langsames Feld verschiebt die Phase der kurzen Wellen (Streifen biegen sich),
   // ein zweites moduliert deren Amplitude. Lange Wellen (≥ 100 m) werden kaum verschoben → bleiben deckungsgleich zur Geometrie.
-  const W = vec2(layerNoise(LAYERS.warpX, base).sub(0.5).mul(16), layerNoise(LAYERS.warpZ, base).sub(0.5).mul(16));
+  const W = vec2(layerNoise(LAYERS.warpX, base).sub(0.5).mul(48), layerNoise(LAYERS.warpZ, base).sub(0.5).mul(48));
   const nA = layerNoise(LAYERS.ampA, base);
   const nB = layerNoise(LAYERS.ampB, base);
 
@@ -104,8 +104,8 @@ export function shadingNormal(base: V2, footprint: F) {
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(w.len)));
     // nicht aufgelöster Anteil → Rauheit: mittlere quadratische Neigung einer Sinuswelle = ½ (k·A)²
     roughness = roughness.add(oneMinus(vis).mul(0.5 * (k * w.amp) * (k * w.amp)));
-    const c = Math.min(1, Math.max(0.1, 10 / w.len)); // Stärke der Phasenverschiebung: 1 für ≤ 10 m, 0,1 für ≥ 100 m
-    const ampMod = w.len < 20 ? mix(nA, nB, i / (N - 1)).mul(1.2).add(0.4) : float(1); // Mittel 1
+    const c = Math.min(1, Math.max(0.35, 10 / w.len)); // Stärke der Phasenverschiebung: 1 für ≤ 10 m, 0,1 für ≥ 100 m
+    const ampMod = w.len < 90 ? mix(nA, nB, i / (N - 1)).mul(1.6).add(0.2) : float(1); // Mittel 1
     If(vis.greaterThan(0.002), () => {
       const A = vis.mul(w.amp).mul(ampMod);
       const f = base.x
@@ -126,7 +126,7 @@ export function shadingNormal(base: V2, footprint: F) {
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(L.scale)));
     roughness = roughness.add(oneMinus(vis).mul(0.5 * RIPPLE_SLOPE * RIPPLE_SLOPE));
     If(vis.greaterThan(0.002), () => {
-      const sl = layerSlope(L, base, RIPPLE_SLOPE).mul(vis);
+      const sl = layerSlope(L, base, RIPPLE_SLOPE).mul(vis).mul(nA.mul(0.8).add(0.6));
       nx.subAssign(sl.x);
       nz.subAssign(sl.y);
     });
