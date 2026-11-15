@@ -2,7 +2,7 @@
 
 Three.js (**WebGPU**, `three@0.187`, TSL) + Vite + TypeScript. `npm run dev` → http://localhost:9292 (strictPort).
 Ziel: **≥ 120 fps** (Chrome, MacBook M1, 120 Hz) und **≤ 100 Draw Calls**. WebGPU ist Pflicht: ohne WebGPU zeigt `main.ts` nur eine Meldung.
-Pläne und Architektur: `docs/PLAN.md`, `docs/ARCHITECTURE.md` (zuerst lesen).
+Pläne und Architektur: `docs/PLAN.md`, `docs/ARCHITECTURE.md` (zuerst lesen). Performance-Messung zum Übernehmen: `docs/PERFORMANCE_MEASUREMENT.md`.
 
 ## Ordner
 | Pfad | Zuständig für |
