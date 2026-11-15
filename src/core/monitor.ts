@@ -110,14 +110,15 @@ export class Monitor {
     this.acc[index] = this.acc[index]! + ms;
   }
 
-  endFrame(intervalMs: number, cpuMs: number, steps: number, droppedSteps: number): void {
+  endFrame(intervalMs: number, cpuMs: number, steps: number, droppedSteps: number, renderRepeat = 1): void {
     if (this.frameNo++ < WARMUP_FRAMES) {
       this.acc.fill(0);
       return;
     }
     const info = this.renderer.info;
     // GPU-Zeit des vorigen Frames (asynchron aufgelöst; 0 = nicht verfügbar)
-    const gpuMs = info.render.timestamp + info.compute.timestamp;
+    // bei Diagnose-Stresslast wird mehrfach gerendert: Render-Zeit ist dann die Summe, auf EINEN Durchgang zurückrechnen
+    const gpuMs = info.render.timestamp / renderRepeat + info.compute.timestamp;
     this.drawCalls = info.render.drawCalls;
     this.triangles = info.render.triangles;
     this.computeCalls = info.compute.frameCalls;

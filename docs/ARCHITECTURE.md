@@ -71,7 +71,7 @@ Gemessen wird die **Arbeit**, nicht der Anzeigeabstand: `max(CPU-Zeit, GPU-Zeit)
 - **F3** zeigt die Modul-Tabelle (ms, Budget, Calls, Probe-Info).
 - **Button „📋 Messung kopieren“** (unten rechts): misst 5 s, fasst Gerät, Frame-Zeiten (p50/p99/max), Draw Calls, Module und Verstöße als Text zusammen und kopiert ihn in die Zwischenablage (`core/report.ts`). Bei gesperrter Zwischenablage erscheint der Text zum Markieren.
 - `__dbg.report` (Dev) liefert den letzten Bericht als Objekt – Grundlage für Headless-Läufe.
-- **Button „🔬 Diagnose (25 s)“:** schaltet nacheinander Himmel, Ozean, Partikel und die Auflösung einzeln um (`Engine.setHidden`/`renderScale`), misst je 3 s und kopiert eine Tabelle mit den GPU-Kosten des jeweils Weggelassenen. Zeigt auch den festen Anteil (MSAA-Auflösung + Ausgabe-Pass) über die Variante „leer“.
+- **Button „🔬 Diagnose“:** rendert nacheinander „leer / nur Himmel / nur Ozean / nur Partikel / alles / halbe Auflösung“ unter **Stresslast** (`Engine.renderRepeat`: Szene 6× pro Frame, damit die GPU voll ausgelastet ist – im Normalbetrieb verfälschen VSync-Leerlauf und GPU-Takt die Zeiten, siehe Messung vom 15.11.). Drei eingebaute Gegenproben prüfen die Messung selbst (normal vs. Stress, Summe der Teile, Pixel-Skalierung).
 - **Renderauflösung:** `MAX_RENDER_PIXELS` (2,6 MP) begrenzt den Pixel-Ratio auf hochauflösenden Displays; `?mp=3.3` überschreibt.
 - **Engine-Ausgabe:** Mit Tonemapping rendert three in einen Zwischenpuffer und zeichnet 1 Vollbild-Quad zur Ausgabe. Dieser Call wird automatisch mitgezählt (`needsFrameBufferTarget`).
 - GPU-Zeit kommt über `trackTimestamp` (Timestamp-Query); ohne Feature steht im HUD „GPU n/a“.

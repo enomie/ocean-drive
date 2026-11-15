@@ -112,26 +112,34 @@ async function deliver(btn: HTMLButtonElement, idleText: string, text: string, r
   }, 2500);
 }
 
-/** Varianten der Diagnose: jeweils ein Teil weniger bzw. weniger Pixel – die GPU-Zeit-Differenz ist dessen Kosten */
-const VARIANTS: { name: string; hide: string[]; scale: number }[] = [
-  { name: 'alles', hide: [], scale: 1 },
-  { name: 'ohne Himmel', hide: ['sky'], scale: 1 },
-  { name: 'ohne Ozean', hide: ['ocean'], scale: 1 },
-  { name: 'ohne Partikel', hide: ['plankton', 'bubbles'], scale: 1 },
-  { name: 'leer (nur Ausgabe-Pass)', hide: ['sky', 'ocean', 'plankton', 'bubbles'], scale: 1 },
-  { name: 'alles bei 50 % Auflösung', hide: [], scale: 0.5 },
+/** Stresslast: so oft wird die Szene pro Frame gerendert, damit die GPU voll ausgelastet ist (konstanter Takt, kein VSync-Leerlauf) */
+const STRESS = 6;
+
+/**
+ * Varianten der Diagnose. Kosten = GPU(Variante) − GPU(leer). Die Zeile „alles, normal (1×)“ ist die Gegenprobe:
+ * ihre GPU-Zeit muss zur Zeile „alles“ (Stresslast, durch die Wiederholungen geteilt) passen, sonst taugt die Messung nicht.
+ */
+const VARIANTS: { name: string; hide: string[]; scale: number; repeat: number }[] = [
+  { name: 'alles, normal (1×)', hide: [], scale: 1, repeat: 1 },
+  { name: 'leer (Ausgabe + MSAA)', hide: ['sky', 'ocean', 'plankton', 'bubbles'], scale: 1, repeat: STRESS },
+  { name: 'nur Himmel', hide: ['ocean', 'plankton', 'bubbles'], scale: 1, repeat: STRESS },
+  { name: 'nur Ozean', hide: ['sky', 'plankton', 'bubbles'], scale: 1, repeat: STRESS },
+  { name: 'nur Partikel', hide: ['sky', 'ocean'], scale: 1, repeat: STRESS },
+  { name: 'alles', hide: [], scale: 1, repeat: STRESS },
+  { name: 'alles bei 50 % Auflösung', hide: [], scale: 0.5, repeat: STRESS },
 ];
 
 async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<string> {
-  const rows: { name: string; gpu: number | null; p50: number; p99: number; calls: number; mp: number }[] = [];
+  const rows: { name: string; gpu: number | null; p50: number; calls: number; mp: number; repeat: number }[] = [];
   const c = engine.renderer.domElement;
   for (let i = 0; i < VARIANTS.length; i++) {
     const v = VARIANTS[i]!;
     btn.textContent = `Diagnose ${i + 1}/${VARIANTS.length}: ${v.name} …`;
     engine.setHidden(v.hide);
     engine.renderScale = v.scale;
+    engine.renderRepeat = v.repeat;
     engine.applyResolution();
-    await wait(1200); // einschwingen (Pipelines, Taktfrequenz)
+    await wait(1500); // einschwingen (Pipelines, Taktfrequenz)
     engine.monitor.startCapture();
     await wait(3000);
     const st = engine.monitor.finishCapture();
@@ -139,32 +147,48 @@ async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<stri
       name: v.name,
       gpu: st?.gpuMs ?? null,
       p50: st?.workP50 ?? 0,
-      p99: st?.workP99 ?? 0,
       calls: st?.drawCallsMax ?? 0,
       mp: (c.width * c.height) / 1e6,
+      repeat: v.repeat,
     });
   }
   engine.setHidden([]);
   engine.renderScale = 1;
+  engine.renderRepeat = 1;
   engine.applyResolution();
 
-  const base = rows[0]?.gpu ?? null;
+  const byName = (n: string) => rows.find((r) => r.name === n);
+  const empty = byName('leer (Ausgabe + MSAA)')?.gpu ?? 0; // „leer“ liefert evtl. keine Zeit: dann 0
   const cam = engine.camera.position;
   const lines = [
     `Ocean Drive Diagnose · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
     await deviceInfo(engine),
     `URL: ${location.pathname}${location.search} · Kamera y ${f(cam.y, 1)} ${cam.y < 0 ? '(unter Wasser)' : '(über Wasser)'}`,
+    `Stresslast: ${STRESS}× Rendern pro Frame, GPU-Zeit ist durch ${STRESS} geteilt (= ein Durchgang)`,
     '',
-    'Variante                      GPU Ø    Arbeit p50 / p99    Calls   MP     Kosten des Weggelassenen',
+    'Variante                      GPU/Durchgang   Calls    MP    Kosten (− leer)',
   ];
   for (const r of rows) {
-    const diff = base !== null && r.gpu !== null && r.name !== 'alles' ? f(base - r.gpu, 2) + ' ms' : '';
+    const cost = r.name.startsWith('nur ') && r.gpu !== null ? `${f(r.gpu - empty, 2)} ms` : '';
     lines.push(
-      `${r.name.padEnd(28)} ${(r.gpu === null ? 'n/a' : f(r.gpu, 2)).padStart(6)}   ` +
-        `${f(r.p50).padStart(5)} / ${f(r.p99).padStart(5)}     ${String(r.calls).padStart(3)}    ${f(r.mp, 1).padStart(4)}   ${diff}`,
+      `${r.name.padEnd(28)} ${(r.gpu === null ? 'n/a' : f(r.gpu, 2) + ' ms').padStart(12)}   ${String(r.calls).padStart(4)}   ${f(r.mp, 1).padStart(4)}   ${cost}`,
     );
   }
-  lines.push('', 'Lesehilfe: „Kosten“ = GPU(alles) − GPU(Variante). „leer“ = feste Kosten (MSAA-Auflösung + Ausgabe-Pass).');
+  // eingebaute Gegenproben
+  const normal = byName('alles, normal (1×)')?.gpu;
+  const all = byName('alles')?.gpu;
+  const half = byName('alles bei 50 % Auflösung')?.gpu;
+  const parts = ['nur Himmel', 'nur Ozean', 'nur Partikel'].map((n) => byName(n)?.gpu);
+  lines.push('');
+  if (normal != null && all != null) {
+    const ratio = normal / all;
+    lines.push(`Gegenprobe 1 (normal vs. Stress): ${f(normal, 2)} vs. ${f(all, 2)} ms → Verhältnis ${f(ratio, 2)} ${ratio > 0.7 && ratio < 1.4 ? '✓ konsistent' : '✗ NICHT konsistent (VSync/Takt verfälscht Normalbetrieb oder Timestamps summieren nicht)'}`);
+  }
+  if (all != null && parts.every((p) => p != null)) {
+    const sum = (parts as number[]).reduce((a, b) => a + (b - empty), 0) + empty;
+    lines.push(`Gegenprobe 2 (Summe der Teile vs. alles): ${f(sum, 2)} vs. ${f(all, 2)} ms (Differenz = Überlappung, z. B. Himmel hinter dem Ozean per Tiefentest verworfen)`);
+  }
+  if (all != null && half != null) lines.push(`Gegenprobe 3 (Pixel): halbe Auflösung kostet ${f((half / all) * 100, 0)} % (≈ 50 % = pixelgebunden)`);
   return lines.join('\n');
 }
 
@@ -176,7 +200,7 @@ async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<stri
 export function installReportButton(engine: Engine): void {
   let busy = false;
   const idle1 = '📋 Messung kopieren';
-  const idle2 = '🔬 Diagnose (25 s)';
+  const idle2 = '🔬 Diagnose (≈ 35 s)';
   const b1 = makeButton(idle1, 8);
   const b2 = makeButton(idle2, 44);
 

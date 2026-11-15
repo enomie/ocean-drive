@@ -35,6 +35,8 @@ export class Engine implements Context {
 
   /** Diagnose: Skala auf die Renderauflösung (1 = normal) */
   renderScale = 1;
+  /** Diagnose: Szene n-mal pro Frame rendern (Stresslast → GPU voll ausgelastet, Takt konstant). Normal: 1 */
+  renderRepeat = 1;
   /** Diagnose: Objekte (nach Name) ausblenden, um ihre GPU-Kosten einzeln zu messen */
   private hidden = new Set<string>();
   private readonly maxPixels: number;
@@ -228,14 +230,14 @@ export class Engine implements Context {
       mon.addModule(i, performance.now() - a);
     }
     // 5. Render
-    this.renderer.render(this.scene, this.camera);
+    for (let r = 0; r < this.renderRepeat; r++) this.renderer.render(this.scene, this.camera);
     // GPU-Zeiten asynchron auflösen (wirken im nächsten Frame; ohne Feature bleibt es bei 0)
     void this.renderer.resolveTimestampsAsync(TimestampQuery.RENDER);
     void this.renderer.resolveTimestampsAsync(TimestampQuery.COMPUTE);
     this.input.endFrame();
 
     // 6. Messen
-    mon.endFrame(rawDt * 1000, performance.now() - t0, steps, dropped);
+    mon.endFrame(rawDt * 1000, performance.now() - t0, steps, dropped, this.renderRepeat);
     const nowSec = this.clock.time;
     if (nowSec - this.lastProbe >= PROBE_INTERVAL) {
       this.lastProbe = nowSec;
