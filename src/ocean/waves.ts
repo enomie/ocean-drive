@@ -1,7 +1,7 @@
 import { If, cos, dot, float, max, oneMinus, positionLocal, sin, smoothstep, sqrt, uniform, vec2, vec3 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 import { ORIGIN } from '../core/origin';
-import { LAYERS, RIPPLE_SLOPE, layerSlope, updateDetailLayers } from './detail';
+import { updateDetailLayers } from './detail';
 
 /**
  * Windsee-Spektrum als Gerstner-Wellen (Port von infinity-ocean/src/waves.ts):
@@ -37,6 +37,24 @@ export const camH = uniform(0);
 const phase = WAVES.map(() => uniform(0));
 
 /**
+ * Kräuselung nur fürs Shading: 8 kleine Sinuswellen (1,4 m … 12 cm) in zufälligen Richtungen rundum.
+ * Bewusst KEIN Gitter-Noise: Value-Noise hat Zellkanten (→ „Raster“), Sinuswellen sind überall glatt.
+ */
+const DETAIL = (() => {
+  const out: { dx: number; dz: number; len: number; slope: number; speed: number; phase0: number }[] = [];
+  let seed = 4242;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const M = 8;
+  for (let i = 0; i < M; i++) {
+    const len = 1.4 * Math.pow(0.12 / 1.4, i / (M - 1)) * (0.9 + rnd() * 0.2);
+    const a = WIND + (rnd() * 2 - 1) * 1.6;
+    out.push({ dx: Math.cos(a), dz: Math.sin(a), len, slope: 0.05, speed: 0.4 + rnd() * 0.3, phase0: rnd() * 6.283 });
+  }
+  return out;
+})();
+const detailPhase = DETAIL.map(() => uniform(0));
+
+/**
  * Phasen in Doppelpräzision auf der CPU wickeln: k·(d·ORIGIN) − ω·t + φ₀ bleibt auch nach Stunden und bei
  * Millionen Metern Abstand exakt. Der Shader addiert nur k·(d·lokal) – lokal ist klein, also float32-genau.
  */
@@ -47,6 +65,11 @@ export function updateWavePhases(t: number): void {
     const k = TAU / w.len;
     const f = k * (w.dx * ORIGIN.x + w.dz * ORIGIN.z - Math.sqrt(9.81 / k) * t) + w.phase0;
     phase[i]!.value = f - Math.floor(f / TAU) * TAU;
+  });
+  DETAIL.forEach((w, i) => {
+    const k = TAU / w.len;
+    const f = k * (w.dx * ORIGIN.x + w.dz * ORIGIN.z - w.speed * t) + w.phase0;
+    detailPhase[i]!.value = f - Math.floor(f / TAU) * TAU;
   });
 }
 
@@ -113,18 +136,18 @@ export function shadingNormal(base: V2, footprint: F) {
     });
   });
 
-  // Kräuselung: drei Oktaven animiertes Noise (Dezimeter bis Meter), nach Pixelgröße band-begrenzt wie die Wellen
-  // feinste Lagen schwächer: dort ist die Textur am gröbsten abgetastet → sonst krisselig
-  const RIPS: readonly (readonly [typeof LAYERS.rip1, number])[] = [[LAYERS.rip1, 0.5], [LAYERS.rip2, 0.3]];
-  for (const [L, gain] of RIPS) {
-    const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(L.scale)));
-    roughness = roughness.add(oneMinus(vis).mul(0.5 * RIPPLE_SLOPE * RIPPLE_SLOPE));
+  // Kräuselung: kleine Sinuswellen, nach Pixelgröße band-begrenzt; Rest → Rauheit
+  DETAIL.forEach((w, i) => {
+    const k = (Math.PI * 2) / w.len;
+    const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(w.len)));
+    roughness = roughness.add(oneMinus(vis).mul(0.5 * w.slope * w.slope));
     If(vis.greaterThan(0.002), () => {
-      const sl = layerSlope(L, base, RIPPLE_SLOPE).mul(vis).mul(gain);
-      nx.subAssign(sl.x);
-      nz.subAssign(sl.y);
+      const f = base.x.mul(w.dx * k).add(base.y.mul(w.dz * k)).add(detailPhase[i]!);
+      const g = vis.mul(w.slope).mul(cos(f));
+      nx.subAssign(g.mul(w.dx));
+      nz.subAssign(g.mul(w.dz));
     });
-  }
+  });
   return { normal: vec3(nx, ny, nz).normalize(), roughness: max(roughness, 0) };
 }
 
