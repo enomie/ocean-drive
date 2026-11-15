@@ -68,15 +68,17 @@ export function createOcean() {
     const R = reflect(V.negate(), N);
     const refl = skyBase(normalize(vec3(R.x, abs(R.y).add(0.01), R.z)));
 
-    // Körperfarbe + Streulicht in dünnen, besonnten Kämmen
-    const deep = vec3(0.004, 0.032, 0.062);
-    const sss = vec3(0.02, 0.32, 0.29);
-    const sunBack = pow(clamp(dot(V.negate(), L).mul(0.5).add(0.5), 0, 1), 3);
-    const crest = clamp(vHeight.mul(0.8).add(0.35), 0, 1.6);
+    // Körperfarbe: gedämpftes, dunkles Petrol-Blau. Streulicht nur an den dünnen, obersten Kammspitzen gegen das Licht,
+    // und nur bei flachem Blick (steil von oben bleibt das Wasser dunkel).
+    const deep = vec3(0.005, 0.026, 0.042);
+    const sss = vec3(0.02, 0.3, 0.27);
+    const sunBack = pow(clamp(dot(V.negate(), L).mul(0.5).add(0.5), 0, 1), 8);
+    const crest = smoothstep(0.7, 2.0, vHeight);
+    const grazing = pow(NdV.oneMinus(), 2).mul(0.9).add(0.1);
     const lit = max(dot(N, L), 0).mul(0.6).add(0.4);
     const body = deep
-      .add(sss.mul(sunBack.add(0.2)).mul(crest).mul(lit))
-      .add(vec3(0.01, 0.045, 0.055).mul(max(L.y, 0)));
+      .add(sss.mul(sunBack.mul(0.9).add(0.03)).mul(crest).mul(grazing).mul(lit).mul(0.35))
+      .add(vec3(0.006, 0.026, 0.034).mul(max(L.y, 0)));
     let col = mix(body, refl, fres);
 
     // Sonnenglanz: Beckmann-Verteilung mit der Rauheit. Nah/aufgelöst: enger, heller Kern (m² ≈ 1e-3).
