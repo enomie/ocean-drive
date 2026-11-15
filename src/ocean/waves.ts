@@ -1,6 +1,7 @@
-import { If, cos, dot, float, max, oneMinus, positionLocal, sin, smoothstep, sqrt, uniform, vec2, vec3 } from 'three/tsl';
+import { If, cos, dot, float, max, mix, oneMinus, positionLocal, sin, smoothstep, sqrt, uniform, vec2, vec3 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 import { ORIGIN } from '../core/origin';
+import { LAYERS, RIPPLE_SLOPE, layerNoise, layerSlope, updateDetailLayers } from './detail';
 
 /**
  * Windsee-Spektrum als Gerstner-Wellen (Port von infinity-ocean/src/waves.ts):
@@ -38,6 +39,7 @@ const phase = WAVES.map(() => uniform(0));
  * Millionen Metern Abstand exakt. Der Shader addiert nur k·(d·lokal) – lokal ist klein, also float32-genau.
  */
 export function updateWavePhases(t: number): void {
+  updateDetailLayers(t);
   const TAU = Math.PI * 2;
   WAVES.forEach((w, i) => {
     const k = TAU / w.len;
@@ -89,14 +91,27 @@ export function shadingNormal(base: V2, footprint: F) {
   const nz = float(0).toVar();
   const ny = float(1).toVar();
   let roughness: F = float(0);
+
+  // Muster aufbrechen (nur Shading): ein langsames Feld verschiebt die Phase der kurzen Wellen (Streifen biegen sich),
+  // ein zweites moduliert deren Amplitude. Lange Wellen (≥ 100 m) werden kaum verschoben → bleiben deckungsgleich zur Geometrie.
+  const W = vec2(layerNoise(LAYERS.warpX, base).sub(0.5).mul(16), layerNoise(LAYERS.warpZ, base).sub(0.5).mul(16));
+  const nA = layerNoise(LAYERS.ampA, base);
+  const nB = layerNoise(LAYERS.ampB, base);
+
   WAVES.forEach((w, i) => {
     const k = (Math.PI * 2) / w.len;
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(w.len)));
     // nicht aufgelöster Anteil → Rauheit: mittlere quadratische Neigung einer Sinuswelle = ½ (k·A)²
     roughness = roughness.add(oneMinus(vis).mul(0.5 * (k * w.amp) * (k * w.amp)));
+    const c = Math.min(1, Math.max(0.1, 10 / w.len)); // Stärke der Phasenverschiebung: 1 für ≤ 10 m, 0,1 für ≥ 100 m
+    const ampMod = w.len < 20 ? mix(nA, nB, i / (N - 1)).mul(1.2).add(0.4) : float(1); // Mittel 1
     If(vis.greaterThan(0.002), () => {
-      const A = vis.mul(w.amp);
-      const f = base.x.mul(w.dx * k).add(base.y.mul(w.dz * k)).add(phase[i]!);
+      const A = vis.mul(w.amp).mul(ampMod);
+      const f = base.x
+        .mul(w.dx * k)
+        .add(base.y.mul(w.dz * k))
+        .add(phase[i]!)
+        .add(W.x.mul(w.dx * k * c).add(W.y.mul(w.dz * k * c)));
       const Q = STEEPNESS / (k * w.amp * N);
       const AC = A.mul(cos(f));
       nx.subAssign(AC.mul(k * w.dx));
@@ -104,6 +119,17 @@ export function shadingNormal(base: V2, footprint: F) {
       ny.subAssign(A.mul(sin(f)).mul(Q * k));
     });
   });
+
+  // Kräuselung: drei Oktaven animiertes Noise (Dezimeter bis Meter), nach Pixelgröße band-begrenzt wie die Wellen
+  for (const L of [LAYERS.rip1, LAYERS.rip2, LAYERS.rip3]) {
+    const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(L.scale)));
+    roughness = roughness.add(oneMinus(vis).mul(0.5 * RIPPLE_SLOPE * RIPPLE_SLOPE));
+    If(vis.greaterThan(0.002), () => {
+      const sl = layerSlope(L, base, RIPPLE_SLOPE).mul(vis);
+      nx.subAssign(sl.x);
+      nz.subAssign(sl.y);
+    });
+  }
   return { normal: vec3(nx, ny, nz).normalize(), roughness: max(roughness, 0) };
 }
 

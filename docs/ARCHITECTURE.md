@@ -87,7 +87,10 @@ Zwei getrennte LODs, beide höhenbewusst:
 - **Shading** (Fragment): Die Normale wird **pro Pixel** aus demselben 16-Wellen-Spektrum berechnet (`shadingNormal`). Eine Welle zählt als aufgelöst, wenn sie ≥ ~10 Pixel lang erscheint, und fällt ab ~4 Pixeln weg (Pixelgröße = Entfernung × Pixelwinkel / Neigung, `core/view.ts`). **Weggelassene Wellen gehen nicht verloren:** ihre mittlere quadratische Neigung ½·(k·A)² wird zur Rauheit m², die den Sonnenglanz (Beckmann-Verteilung) verbreitert. Nah: enger, heller Kern (m² ≈ 1e-3); aus großer Höhe: breiter, schwächerer Glitzerpfad. So bleibt das Meer aus jeder Höhe ein Meer statt glatter Flecken.
 - **Selbstprüfung** (`ocean`-Probe): bei wachsender Pixelgröße nehmen aufgelöste Wellen nie zu und die Rauheit nie ab; bei „unendlich“ ist die ganze Neigung Rauheit. Das HUD zeigt z. B. `LOD @10 m/Pixel: 5/16 Wellen, m² 0.011`.
 - **Kosten:** Das Fragment-Shading wertet pro Pixel bis zu 16 Wellen (sin/cos) aus, aufgelöste nur; Messung steht aus.
-- **Noch nicht enthalten:** Schaum (Jacobi), Detail-Kräuselung (Noise) im Nahbereich, Wasserfarbe nach Tiefe.
+- **Muster aufbrechen (`ocean/detail.ts`, nur Shading):** 16 reine Sinuswellen ergeben ein „Wellblech“ (Messung am Screenshot: einzelne Frequenzspitzen 50.000× über dem Rauschen). Zwei langsame Noise-Felder verschieben die Phase der kurzen Wellen (Streifen biegen sich) und modulieren ihre Amplitude (0,4…1,6×). Lange Wellen (≥ 100 m) bleiben deckungsgleich zur Geometrie, damit der CPU-Spiegel exakt bleibt.
+- **Kräuselung:** drei Noise-Oktaven (1 m, 0,45 m, 0,2 m; Neigung ≈ 4°), animiert, nach Pixelgröße band-begrenzt, Reste fließen in die Rauheit. Dem Nahbereich fehlte Feinstruktur (nur 1,7–4,4 % der Bildenergie bei hohen Frequenzen).
+- **Floating Origin:** Alle Noise-Lagen rechnen absolut (Ursprung und Drift in Doppelpräzision auf der CPU als Offset modulo 256); Probe `Detail-Δ` prüft, dass sie bei einer Verschiebung nicht springen. Der gemeinsame Noise liegt in `core/noise.ts`.
+- **Noch nicht enthalten:** Schaum (Jacobi), Wasserfarbe nach Tiefe.
 
 ## Floating Origin (`core/origin.ts`)
 

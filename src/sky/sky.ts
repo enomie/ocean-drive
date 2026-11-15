@@ -4,7 +4,7 @@ import {
   Fn, If, cameraProjectionMatrix, clamp, dot, float, max, mix, modelViewMatrix, normalize, positionLocal, pow,
   smoothstep, uniform, vec2, vec3, vec4,
 } from 'three/tsl';
-import { fbm } from './noise';
+import { fbm } from '../core/noise';
 import { SUN_COL, SUN_DIR, sunDir } from '../core/sun';
 import { under, underwaterColor } from '../underwater';
 import { finishColor } from '../core/output';

@@ -1,5 +1,6 @@
 import type { Context, Module } from '../core/module';
 import { createOcean } from './ocean';
+import { detailShiftError } from './detail';
 import { shadingLod, WAVES } from './waves';
 
 export interface OceanApi {
@@ -46,15 +47,17 @@ export function oceanModule(): Module<OceanApi> {
       lodOk = lodOk && Math.abs(prev.m2 - total) < 1e-9 && shadingLod(0.01).resolved === WAVES.length; // ganz grob: alle Neigung als Rauheit
       const lodMid = shadingLod(10);
       const e = ocean.errors(ctx.camera.position);
+      const dErr = detailShiftError(ctx.clock.time);
+      const detailOk = dErr < 1e-6; // Noise-Lagen (Warp/Amplitude/Kräuselung) springen bei Origin-Shift nicht
       const rangeOk = Number.isFinite(lo + hi) && lo >= -maxH * 1.05 && hi <= maxH * 1.05;
       const shiftOk = e.shift < 1e-6; // Origin-Verschiebung ändert die Wasserhöhe nicht
       const mirrorOk = e.mirror < 5e-3; // Shader-Formel (float32) = CPU-Formel (double)
       return {
-        ok: rangeOk && shiftOk && mirrorOk && lodOk,
+        ok: rangeOk && shiftOk && mirrorOk && lodOk && detailOk,
         info:
-          `h ${lo.toFixed(1)}…${hi.toFixed(1)} m · Shift-Δ ${e.shift.toExponential(0)} · Shader-Δ ${e.mirror.toExponential(0)}` +
+          `h ${lo.toFixed(1)}…${hi.toFixed(1)} m · Shift-Δ ${e.shift.toExponential(0)} · Shader-Δ ${e.mirror.toExponential(0)} · Detail-Δ ${dErr.toExponential(0)}` +
           ` · LOD @10 m/Pixel: ${lodMid.resolved}/${WAVES.length} Wellen, m² ${lodMid.m2.toFixed(3)}` +
-          `${rangeOk ? '' : ' · Höhe außerhalb Bereich'}${shiftOk ? '' : ' · SHIFT-INVARIANZ VERLETZT'}${mirrorOk ? '' : ' · SHADER≠CPU'}${lodOk ? '' : ' · LOD NICHT MONOTON'}`,
+          `${rangeOk ? '' : ' · Höhe außerhalb Bereich'}${shiftOk ? '' : ' · SHIFT-INVARIANZ VERLETZT'}${mirrorOk ? '' : ' · SHADER≠CPU'}${lodOk ? '' : ' · LOD NICHT MONOTON'}${detailOk ? '' : ' · DETAIL-NOISE SPRINGT BEI SHIFT'}`,
       };
     },
     dispose() {
