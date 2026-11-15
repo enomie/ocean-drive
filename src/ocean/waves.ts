@@ -40,16 +40,17 @@ export function updateWavePhases(t: number): void {
   });
 }
 
-/** Verschiebung + analytische Normale am unverschobenen Gitterpunkt (Vertex-Stufe) */
-export function gerstner() {
-  const base = positionLocal.xz.add(camXZ); // Weltposition vor der Verschiebung
-  const dist = length(positionLocal.xz); // Abstand zur Kamera
-  let dx: Node<'float'> = float(0);
-  let dz: Node<'float'> = float(0);
-  let dy: Node<'float'> = float(0);
-  let nx: Node<'float'> = float(0);
-  let nz: Node<'float'> = float(0);
-  let ny: Node<'float'> = float(1);
+type F = Node<'float'>;
+type V2 = Node<'vec2'>;
+
+/** Verschiebung + analytische Normale am unverschobenen Punkt `base` (Weltkoordinaten xz), `dist` = Abstand zur Kamera */
+function wavesAt(base: V2, dist: F) {
+  let dx: F = float(0);
+  let dz: F = float(0);
+  let dy: F = float(0);
+  let nx: F = float(0);
+  let nz: F = float(0);
+  let ny: F = float(1);
   WAVES.forEach((w, i) => {
     const k = (Math.PI * 2) / w.len;
     // ferne Wellen ausblenden, die das Gitter nicht mehr auflösen kann
@@ -66,11 +67,32 @@ export function gerstner() {
     nz = nz.sub(AC.mul(k * w.dz));
     ny = ny.sub(A.mul(S).mul(Q * k));
   });
+  return { dx, dy, dz, normal: vec3(nx, ny, nz) };
+}
+
+/** Ozean-Vertex: Gitterpunkt relativ zur Kamera → verschobene Weltposition, Normale, Höhe */
+export function gerstner() {
+  const base = positionLocal.xz.add(camXZ);
+  const w = wavesAt(base, length(positionLocal.xz));
   return {
-    position: vec3(base.x.add(dx), dy, base.y.add(dz)),
-    normal: vec3(nx, ny, nz).normalize(),
-    height: dy,
+    position: vec3(base.x.add(w.dx), w.dy, base.y.add(w.dz)),
+    normal: w.normal.normalize(),
+    height: w.dy,
   };
+}
+
+/**
+ * Höhe der Oberfläche über Weltposition xz (GPU-Spiegel von `waveHeight`):
+ * Fixpunkt-Iteration über die horizontale Verschiebung. Für Partikel, Fische, später Schiffe auf der GPU.
+ */
+export function surfaceHeight(xz: V2) {
+  const dist = length(xz.sub(camXZ));
+  let p: V2 = xz;
+  for (let i = 0; i < 3; i++) {
+    const w = wavesAt(p, dist);
+    p = xz.sub(vec2(w.dx, w.dz));
+  }
+  return wavesAt(p, dist).dy;
 }
 
 // ── CPU-Spiegel (muss zur GPU-Funktion oben passen; Basis für Wasserlinie und später Schiffsauftrieb) ──

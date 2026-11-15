@@ -30,6 +30,21 @@ function caustic(p: Node<'vec2'>, t: Node<'float'>) {
  * @param rd   Blickrichtung (Welt, normalisiert), Kamera → Fragment
  * @param dist Abstand Kamera → Fragment in Metern
  */
+/** Anteil des Lichts, der nach `dist` Metern Wasser übrig ist (pro Farbkanal; Rot verschwindet zuerst) */
+export function waterTransmittance(dist: Node<'float'>) {
+  return exp(min(dist, 400).negate().mul(vec3(0.16, 0.04, 0.03)));
+}
+
+/** Wie `underwaterColor`, aber ohne Lichtschäfte – billig genug für Partikel und kleine Objekte */
+export function underwaterFog(col: Node<'vec3'>, rd: Node<'vec3'>, dist: Node<'float'>) {
+  const up = rd.y.mul(0.5).add(0.5);
+  const sunW = normalize(refract(sunDir.negate(), vec3(0, 1, 0), 1 / 1.33));
+  const fogCol = mix(vec3(0.0, 0.03, 0.06), vec3(0.03, 0.26, 0.32), pow(up, 2))
+    .mul(exp(camDepth.mul(-0.04)))
+    .add(vec3(0.05, 0.28, 0.25).mul(pow(max(dot(rd, sunW.negate()), 0), 5)).mul(0.7));
+  return col.mul(waterTransmittance(dist)).add(fogCol.mul(exp(dist.mul(-0.02)).oneMinus()));
+}
+
 export function underwaterColor(col: Node<'vec3'>, rd: Node<'vec3'>, dist: Node<'float'>) {
   // Wasserfarbe hängt davon ab, wie weit wir zum Licht hinaufschauen
   const up = rd.y.mul(0.5).add(0.5);
@@ -56,6 +71,9 @@ export function underwaterColor(col: Node<'vec3'>, rd: Node<'vec3'>, dist: Node<
   uw.addAssign(vec3(0.35, 0.75, 0.7).mul(rays.div(8)).mul(0.8).mul(smoothstep(-0.3, 0.6, rd.y)));
   return uw;
 }
+
+/** Kamera unter Wasser? (z. B. um Unterwasser-Objekte über Wasser gar nicht zu zeichnen) */
+export const isUnderwater = (): boolean => under.value > 0.001;
 
 /** pro Frame: Kameraposition relativ zur Wasseroberfläche (surfaceY = Höhe direkt über/unter der Kamera) */
 export function updateUnderwater(dt: number, camY: number, surfaceY: number): void {

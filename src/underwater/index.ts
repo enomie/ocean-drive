@@ -1,2 +1,2 @@
 /** Unterwasser-Optik – öffentlicher Einstieg */
-export { underwaterColor, updateUnderwater, under } from './underwater';
+export { underwaterColor, underwaterFog, waterTransmittance, updateUnderwater, isUnderwater, under } from './underwater';

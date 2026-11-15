@@ -2,7 +2,8 @@ import { ACESFilmicToneMapping } from 'three';
 import { PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu';
 import { createSky } from './sky';
 import { createOcean } from './ocean';
-import { updateUnderwater } from './underwater';
+import { isUnderwater, updateUnderwater } from './underwater';
+import { BubbleSystem, createPlankton, StreamEmitter, updateParticleView } from './particles';
 import { FlyCamera } from './camera/flyCamera';
 
 /** Erste Prüfung: ohne WebGPU wird nichts geladen. */
@@ -32,7 +33,17 @@ const sky = createSky();
 scene.add(sky.mesh);
 const ocean = createOcean();
 scene.add(ocean.mesh);
-camera.position.set(0, 4, 0);
+const params = new URLSearchParams(location.search);
+// Testparameter: ?y=<Starthöhe in m> (negativ = unter Wasser)
+camera.position.set(0, Number(params.get('y') ?? 4), 0);
+
+const plankton = createPlankton();
+scene.add(plankton.mesh);
+const bubbles = new BubbleSystem(renderer);
+scene.add(bubbles.mesh);
+// Test-Strom: später ersetzt durch Propeller-Emitter (gleiche Klasse, Pose vom Schiff)
+const stream = new StreamEmitter();
+stream.origin.set(0, -6, -12);
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -41,6 +52,9 @@ addEventListener('resize', () => {
 });
 
 const fly = new FlyCamera(camera);
+
+// Dev-Zugriff für Diagnose (Konsole / Headless-Prüfung)
+if (import.meta.env.DEV) Object.assign(window, { __dbg: { renderer, scene, camera, sky, ocean, plankton, bubbles } });
 
 const hud = document.getElementById('hud')!;
 let last = performance.now();
@@ -56,6 +70,11 @@ renderer.setAnimationLoop((now) => {
   sky.update(dt);
   ocean.update(dt, camera.position);
   updateUnderwater(dt, camera.position.y, ocean.heightAt(camera.position.x, camera.position.z, camera.position));
+  plankton.mesh.visible = isUnderwater();
+  plankton.update(dt);
+  updateParticleView(renderer, camera);
+  stream.update(dt, bubbles);
+  bubbles.update(dt);
   renderer.render(scene, camera);
 
   acc += dt;
