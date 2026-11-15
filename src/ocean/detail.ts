@@ -71,10 +71,13 @@ export function layerNoise(L: Layer, base: V2) {
 
 /** Neigungsvektor (Welt) einer Kräuselungs-Lage: Differenz des Noise entlang der gedrehten Achsen, zurückgedreht */
 export function layerSlope(L: Layer, base: V2, strength: number) {
+  // Differenzschritt 0,4 Zellen: die Hardware-Interpolation der 8-Bit-Textur hat nur 1/256 Gewichtsauflösung,
+  // ein kleiner Schritt (0,15) verstärkt diese Stufen zu einem Gittermuster („Waffel“)
+  const D = 0.4;
   const p = layerCoord(L, base);
   const v0 = vnoise(p);
-  const gx = vnoise(p.add(vec2(0.15, 0)) as unknown as V2).sub(v0).mul(strength / 0.15);
-  const gz = vnoise(p.add(vec2(0, 0.15)) as unknown as V2).sub(v0).mul(strength / 0.15);
+  const gx = vnoise(p.add(vec2(D, 0)) as unknown as V2).sub(v0).mul(strength / D);
+  const gz = vnoise(p.add(vec2(0, D)) as unknown as V2).sub(v0).mul(strength / D);
   return vec2(gx.mul(L.c).add(gz.mul(L.s)), gx.mul(-L.s).add(gz.mul(L.c)));
 }
 

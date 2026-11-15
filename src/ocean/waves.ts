@@ -122,11 +122,13 @@ export function shadingNormal(base: V2, footprint: F) {
   });
 
   // Kräuselung: drei Oktaven animiertes Noise (Dezimeter bis Meter), nach Pixelgröße band-begrenzt wie die Wellen
-  for (const L of [LAYERS.rip0, LAYERS.rip1, LAYERS.rip2, LAYERS.rip3, LAYERS.rip4]) {
+  // feinste Lagen schwächer: dort ist die Textur am gröbsten abgetastet → sonst krisselig
+  const RIPS: readonly (readonly [typeof LAYERS.rip0, number])[] = [[LAYERS.rip0, 1], [LAYERS.rip1, 1], [LAYERS.rip2, 0.8], [LAYERS.rip3, 0.5], [LAYERS.rip4, 0.3]];
+  for (const [L, gain] of RIPS) {
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(L.scale)));
     roughness = roughness.add(oneMinus(vis).mul(0.5 * RIPPLE_SLOPE * RIPPLE_SLOPE));
     If(vis.greaterThan(0.002), () => {
-      const sl = layerSlope(L, base, RIPPLE_SLOPE).mul(vis).mul(nA.mul(0.8).add(0.6));
+      const sl = layerSlope(L, base, RIPPLE_SLOPE).mul(vis).mul(gain).mul(nA.mul(0.8).add(0.6));
       nx.subAssign(sl.x);
       nz.subAssign(sl.y);
     });
