@@ -27,6 +27,7 @@ Pro Frame, immer in dieser Reihenfolge:
 | # | Phase | Was | Zeit |
 |---|---|---|---|
 | 1 | Zeit | `Clock.advance(dt)`, `dt` auf `MAX_FRAME_DT` (0,1 s) begrenzt | – |
+| 1b | Origin-Shift | Kamera > 1024 m vom lokalen Nullpunkt → alles um ein Vielfaches von 64 m verschieben, `shift(dx, dz)` an alle Module | – |
 | 2 | Simulation | `fixedUpdate(1/120)` so oft wie der Akkumulator hergibt, max. `MAX_FIXED_STEPS` (5), Rest wird verworfen und gezählt | fest |
 | 3 | Visuals | `update(dt, alpha)`; `alpha` = Anteil bis zum nächsten festen Schritt (für Interpolation) | variabel |
 | 4 | GPU-Arbeit | `compute()` (Compute-Dispatches, nach allen `update`) | – |
@@ -43,7 +44,7 @@ Pro Frame, immer in dieser Reihenfolge:
 ```ts
 interface Module<Api> {
   name; deps?; budget; api?;     // name, budget: Pflicht
-  init?(ctx); fixedUpdate?(dt); update?(dt, alpha); compute?(); dispose?();
+  init?(ctx); shift?(dx, dz); fixedUpdate?(dt); update?(dt, alpha); compute?(); dispose?();
   probe(): { ok, info? };        // Pflicht: ohne Selbstprüfung kompiliert das Modul nicht
 }
 ```
@@ -78,6 +79,18 @@ Gemessen wird die **Arbeit**, nicht der Anzeigeabstand: `max(CPU-Zeit, GPU-Zeit)
 - GPU-Zeit kommt über `trackTimestamp` (Timestamp-Query); ohne Feature steht im HUD „GPU n/a“.
 - **Die deklarierten Budgets sind Schätzungen**, bis sie auf dem Referenzgerät (Chrome, MacBook M1, 120 Hz) gemessen wurden. Der Monitor zeigt dann, was nachgezogen werden muss.
 
+## Floating Origin (`core/origin.ts`)
+
+**Absolut = lokal + `ORIGIN`.** Szene, Shader und Physik arbeiten in LOKALEN Koordinaten (klein, float32-genau); `ORIGIN` ist ein double und wird nur von der Engine geändert. Ab 1024 m Kameraabstand zum Nullpunkt verschiebt die Engine Kamera und `ORIGIN` um ein Vielfaches von 64 m und ruft `shift(dx, dz)` an jedem Modul auf (am Frame-Anfang, vor allen Updates).
+
+- **Jedes Modul schiebt seinen eigenen Positionszustand mit** (Emitter, GPU-Puffer, Caches). Szene-Objekte, die ihre Position nur aus der Kamera ableiten (Himmelskuppel, Ozean-Gitter), brauchen nichts.
+- **Wellen:** Die Phase `k·(d·ORIGIN) − ω·t + φ₀` wird in Doppelpräzision auf der CPU gewickelt; der Shader addiert nur `k·(d·lokal)`. Der CPU-Spiegel `waveHeight` nimmt die absolute Position.
+- **Plankton:** Wrap-Box in Weltkoordinaten über `ORIGIN mod BOX` (Uniform) → bleibt beim Shift an seinem Platz.
+- **Bläschen:** Compute-Pass „shift“ zieht den Verschiebungsvektor von allen lebenden Partikeln ab, VOR dem Einfügen neuer (die schon im neuen System liegen).
+- **Selbstprüfungen:** `origin` (absolute Kameraposition unverändert, Kamera nahe am Nullpunkt, Ursprung gerastert), `ocean` (Wasserhöhe unter einer Verschiebung unverändert: Δ ~1e-15 m; Shader-Formel = CPU-Formel: Δ ~5e-5).
+- **Testen:** `?x=2000000&z=-1500000` startet weit draußen; im Dev-Modus `__dbg.camera.position.x += 1500` löst eine Verschiebung aus, `__dbg.get('origin').shifts` zählt sie.
+- **Bekannte Grenze:** Das Kaustik-/Lichtschaft-Muster unter Wasser (`underwater.ts`) ist an lokale Koordinaten gebunden und springt bei einer Verschiebung einmalig. Selten (≥ 1 km Flug) und nur unter Wasser sichtbar.
+
 ## Regeln
 
 - **Hot Path:** keine Allokation in `update`/`fixedUpdate`/`compute`, keine Closures pro Frame, typisierte Arrays.
@@ -88,8 +101,7 @@ Gemessen wird die **Arbeit**, nicht der Anzeigeabstand: `max(CPU-Zeit, GPU-Zeit)
 
 ## Offen (nächste Schritte, in dieser Reihenfolge)
 
-1. **Floating Origin** (`shift(dx, dz)` im Vertrag, Invarianten-Probe): Wellenphase braucht den Origin-Term, Plankton die Wrap-Verschiebung, Bläschen eine Shift-Uniform im Compute.
-2. **Terrain** aus suspension (LOD, Höhen-Clipmap für den Ozean, Schatten-Clipmap).
-3. **`Craft`-Schnittstelle** + Fahrzeug (Rapier im Worker, `fixedUpdate`) und Schiffe, Dropdown.
-4. **Headless-Läufe** mit festem Seed und skriptbarer Eingabe → CI-Gate auf `report.violations`.
-5. **Qualitätsstufen**, die der Monitor selbsttätig schaltet.
+1. **Terrain** aus suspension (LOD, Höhen-Clipmap für den Ozean, Schatten-Clipmap).
+2. **`Craft`-Schnittstelle** + Fahrzeug (Rapier im Worker, `fixedUpdate`) und Schiffe, Dropdown.
+3. **Headless-Läufe** mit festem Seed und skriptbarer Eingabe → CI-Gate auf `report.violations`.
+4. **Qualitätsstufen**, die der Monitor selbsttätig schaltet.

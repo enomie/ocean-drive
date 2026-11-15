@@ -1,4 +1,4 @@
-import { AdditiveBlending, Mesh, PlaneGeometry } from 'three';
+import { AdditiveBlending, Mesh, PlaneGeometry, Vector3 } from 'three';
 import { SpriteNodeMaterial } from 'three/webgpu';
 import {
   abs, cameraPosition, cos, exp, float, floor, fract, hash, instanceIndex, length, max, mix, normalize, select, sin,
@@ -12,6 +12,8 @@ import { finishColor } from '../core/output';
 const BOX = 34; // m, um die Kamera gewickeltes Volumen
 const COUNT = 7000;
 
+const mod = (a: number, n: number): number => ((a % n) + n) % n;
+
 /**
  * Plankton, Meeresschnee und Krill (Port von infinity-ocean `createDrift`): zustandslos – Position und
  * Eigenschaften folgen nur aus `hash(instanceIndex)` und der Zeit, kein Puffer, keine CPU-Arbeit.
@@ -19,6 +21,8 @@ const COUNT = 7000;
  */
 export function createPlankton() {
   const time = uniform(0);
+  // Ursprung modulo Wickelbox (Doppelpräzision auf der CPU): hält das Plankton beim Origin-Shift an seiner Stelle in der Welt
+  const originMod = uniform(new Vector3());
   const id = instanceIndex;
   const r0 = hash(id);
   const r1 = hash(id.add(7919));
@@ -40,7 +44,7 @@ export function createPlankton() {
 
   // um die Kamera wickeln
   const cam = cameraPosition;
-  const p = cam.add(vec3(r0, r1, r2).mul(BOX).add(move).sub(cam).mod(BOX)).sub(BOX / 2);
+  const p = cam.add(vec3(r0, r1, r2).mul(BOX).add(move).sub(cam).sub(originMod).mod(BOX)).sub(BOX / 2);
   const d = length(p.sub(cam));
   const air = p.y.greaterThan(surfaceHeight(p.xz).add(0.15));
 
@@ -85,8 +89,9 @@ export function createPlankton() {
   return {
     mesh,
     /** `t` = Clock.time */
-    update(t: number): void {
+    update(t: number, originX: number, originZ: number): void {
       time.value = t;
+      originMod.value.set(mod(originX, BOX), 0, mod(originZ, BOX));
     },
   };
 }

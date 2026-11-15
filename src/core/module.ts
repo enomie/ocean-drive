@@ -34,7 +34,7 @@ export interface Context {
  * ein Modul ohne Budget und Selbstprüfung kompiliert nicht.
  *
  * Reihenfolge pro Frame (siehe docs/ARCHITECTURE.md):
- *   Eingabe → fixedUpdate* (120 Hz) → update → compute → render → Monitor
+ *   Origin-Shift → fixedUpdate* (120 Hz) → update → compute → render → Monitor
  * Innerhalb einer Phase laufen die Module in Abhängigkeitsreihenfolge (`deps`).
  */
 export interface Module<Api = unknown> {
@@ -50,6 +50,12 @@ export interface Module<Api = unknown> {
   fixedUpdate?(dt: number): void;
   /** einmal pro Frame, variabel: Visuals, Kamera, Uniforms. `alpha` = Anteil bis zum nächsten festen Schritt (Interpolation) */
   update?(dt: number, alpha: number): void;
+  /**
+   * Floating Origin: alles wurde um (dx, dz) Meter verschoben (lokal_neu = lokal_alt − d). Das Modul muss ALLEN eigenen
+   * Positionszustand mitschieben (Emitter, Puffer, Cache …). Kamera und Szene-Objekte der Engine sind schon verschoben.
+   * Läuft am Frame-Anfang, vor allen update()-Hooks.
+   */
+  shift?(dx: number, dz: number): void;
   /** GPU-Compute-Dispatches, nach allen update() und vor dem Rendern */
   compute?(): void;
   /** Selbstprüfung: läuft beim Start und alle PROBE_INTERVAL s. Muss billig sein und darf nichts allozieren, was wächst. */

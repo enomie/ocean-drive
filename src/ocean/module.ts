@@ -34,8 +34,16 @@ export function oceanModule(): Module<OceanApi> {
         lo = Math.min(lo, h);
         hi = Math.max(hi, h);
       }
-      const ok = Number.isFinite(lo + hi) && lo >= -maxH * 1.05 && hi <= maxH * 1.05;
-      return { ok, info: `h ${lo.toFixed(1)}…${hi.toFixed(1)} m (max ±${maxH.toFixed(1)})` };
+      const e = ocean.errors(ctx.camera.position);
+      const rangeOk = Number.isFinite(lo + hi) && lo >= -maxH * 1.05 && hi <= maxH * 1.05;
+      const shiftOk = e.shift < 1e-6; // Origin-Verschiebung ändert die Wasserhöhe nicht
+      const mirrorOk = e.mirror < 5e-3; // Shader-Formel (float32) = CPU-Formel (double)
+      return {
+        ok: rangeOk && shiftOk && mirrorOk,
+        info:
+          `h ${lo.toFixed(1)}…${hi.toFixed(1)} m · Shift-Δ ${e.shift.toExponential(0)} · Shader-Δ ${e.mirror.toExponential(0)}` +
+          `${rangeOk ? '' : ' · Höhe außerhalb Bereich'}${shiftOk ? '' : ' · SHIFT-INVARIANZ VERLETZT'}${mirrorOk ? '' : ' · SHADER≠CPU'}`,
+      };
     },
     dispose() {
       ctx.scene.remove(ocean.mesh);

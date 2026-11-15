@@ -29,3 +29,10 @@ export const WARMUP_FRAMES = 90;
  * (z. B. MacBook, DPR 2 ≈ 5,9 MP) wird der Pixel-Ratio so weit gesenkt. URL `?mp=3.3` überschreibt (Megapixel).
  */
 export const MAX_RENDER_PIXELS = 2_600_000;
+
+/**
+ * Floating Origin: absolut = lokal + ORIGIN. Alles in Szene und Shadern arbeitet in LOKALEN Koordinaten (klein, float32-genau).
+ * Überschreitet die Kamera ORIGIN_THRESHOLD m vom lokalen Nullpunkt, wird alles um ein Vielfaches von ORIGIN_GRID verschoben.
+ */
+export const ORIGIN_THRESHOLD = 1024;
+export const ORIGIN_GRID = 64;

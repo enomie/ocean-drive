@@ -5,6 +5,7 @@ import { FIXED_DT, MAX_FIXED_STEPS, MAX_FRAME_DT, MAX_RENDER_PIXELS, PROBE_INTER
 import { Input } from './input';
 import type { Context, Module, ProbeResult } from './module';
 import { Monitor, type Report } from './monitor';
+import { ORIGIN, originModule, originShiftFor } from './origin';
 import { installReportButton } from './report';
 
 /**
@@ -50,7 +51,12 @@ export class Engine implements Context {
   ) {
     this.maxPixels = opts.maxPixels ?? MAX_RENDER_PIXELS;
     this.dev = opts.dev ?? import.meta.env.DEV;
+    this.originMod = originModule();
+    this.add(this.originMod); // Floating Origin ist Teil des Kerns
   }
+
+  private readonly originMod: ReturnType<typeof originModule>;
+  private originIdx = 0;
 
   /** Renderauflösung: Pixel-Ratio des Displays, begrenzt auf maxPixels, mal Diagnose-Skala */
   get pixelRatio(): number {
@@ -114,6 +120,7 @@ export class Engine implements Context {
     };
     for (const m of this.modules) visit(m, []);
     this.modules = order;
+    this.originIdx = order.indexOf(this.originMod);
   }
 
   async start(): Promise<void> {
@@ -179,6 +186,23 @@ export class Engine implements Context {
     });
   }
 
+  private applyOriginShift(mon: Monitor): void {
+    const cam = this.camera.position;
+    const s = originShiftFor(cam.x, cam.z);
+    if (!s) return;
+    const t0 = performance.now();
+    const absX = cam.x + ORIGIN.x;
+    const absZ = cam.z + ORIGIN.z;
+    cam.x -= s.dx;
+    cam.z -= s.dz;
+    ORIGIN.x += s.dx;
+    ORIGIN.z += s.dz;
+    for (const m of this.modules) m.shift?.(s.dx, s.dz);
+    // Invariante: die absolute Kameraposition darf sich nicht ändern
+    this.originMod.recordShift(Math.hypot(cam.x + ORIGIN.x - absX, cam.z + ORIGIN.z - absZ));
+    mon.addModule(this.originIdx, performance.now() - t0);
+  }
+
   private readonly frame = (now: number): void => {
     if (!this.running) return;
     const t0 = performance.now();
@@ -188,6 +212,9 @@ export class Engine implements Context {
     this.clock.advance(dt);
     const mon = this.monitor;
     const mods = this.modules;
+
+    // 1b. Floating Origin: Kamera zu weit vom lokalen Nullpunkt → alles verschieben (vor jeder Simulation)
+    this.applyOriginShift(mon);
 
     // 2. feste Schritte
     this.acc += dt;

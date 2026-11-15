@@ -1,4 +1,5 @@
 import type { Context, Module } from '../core/module';
+import { ORIGIN } from '../core/origin';
 import { isUnderwater } from '../underwater';
 import { BubbleSystem } from './bubbles';
 import { updateParticleView } from './common';
@@ -36,7 +37,7 @@ export function planktonModule(): Module {
     },
     update() {
       plankton.mesh.visible = isUnderwater(); // über Wasser verdeckt die Oberfläche alles: gar nicht zeichnen
-      plankton.update(ctx.clock.time);
+      plankton.update(ctx.clock.time, ORIGIN.x, ORIGIN.z);
     },
     probe() {
       return { ok: plankton.mesh.count > 0, info: `${plankton.mesh.count} Teilchen${plankton.mesh.visible ? '' : ' (aus)'}` };
@@ -68,6 +69,10 @@ export function bubblesModule(): Module<BubblesApi> {
       system = new BubbleSystem(c.renderer);
       c.scene.add(system.mesh);
     },
+    /** Floating Origin: alle lebenden Bläschen im GPU-Puffer verschieben (läuft in compute(), vor dem Einfügen neuer) */
+    shift(dx, dz) {
+      system.shift(dx, dz);
+    },
     /** Spawns aller Emitter liegen jetzt vor (Emitter laufen in update, davor): einfügen + simulieren */
     compute() {
       system.update(ctx.clock.dt);
@@ -75,7 +80,7 @@ export function bubblesModule(): Module<BubblesApi> {
     probe() {
       const d = system.dropped - lastDropped;
       lastDropped = system.dropped;
-      return { ok: d === 0, info: d === 0 ? `${system.spawned} erzeugt` : `${d} Spawns verworfen (Puffer voll)` };
+      return { ok: d === 0, info: d === 0 ? `${system.spawned} erzeugt · ${system.shifts} Origin-Shifts` : `${d} Spawns verworfen (Puffer voll)` };
     },
     dispose() {
       ctx.scene.remove(system.mesh);

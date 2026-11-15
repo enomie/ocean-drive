@@ -1,5 +1,6 @@
 import { cos, float, length, oneMinus, positionLocal, sin, smoothstep, uniform, vec2, vec3 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
+import { ORIGIN } from '../core/origin';
 
 /**
  * Windsee-Spektrum als Gerstner-Wellen (Port von infinity-ocean/src/waves.ts):
@@ -30,12 +31,15 @@ export const WAVES: readonly Wave[] = (() => {
 export const camXZ = uniform(vec2(0, 0));
 const phase = WAVES.map(() => uniform(0));
 
-/** Phasen in Doppelpräzision auf der CPU wickeln: ω·t bleibt auch nach Stunden genau */
+/**
+ * Phasen in Doppelpräzision auf der CPU wickeln: k·(d·ORIGIN) − ω·t + φ₀ bleibt auch nach Stunden und bei
+ * Millionen Metern Abstand exakt. Der Shader addiert nur k·(d·lokal) – lokal ist klein, also float32-genau.
+ */
 export function updateWavePhases(t: number): void {
   const TAU = Math.PI * 2;
   WAVES.forEach((w, i) => {
     const k = TAU / w.len;
-    const f = w.phase0 - Math.sqrt(9.81 * k) * t;
+    const f = k * (w.dx * ORIGIN.x + w.dz * ORIGIN.z - Math.sqrt(9.81 / k) * t) + w.phase0;
     phase[i]!.value = f - Math.floor(f / TAU) * TAU;
   });
 }
@@ -104,7 +108,7 @@ function smooth(a: number, b: number, x: number): number {
 }
 
 /** Verschiebung am unverschobenen Punkt (px, pz) – dieselbe Mathematik wie `gerstner()` */
-function displacement(px: number, pz: number, t: number, camX: number, camZ: number): [number, number, number] {
+function displacement(px: number, pz: number, t: number, camX: number, camZ: number, ox: number, oz: number): [number, number, number] {
   let dx = 0;
   let dy = 0;
   let dz = 0;
@@ -112,7 +116,7 @@ function displacement(px: number, pz: number, t: number, camX: number, camZ: num
   for (const w of WAVES) {
     const k = (Math.PI * 2) / w.len;
     const A = w.amp * (1 - smooth(w.len * 5, w.len * 13, dist));
-    const f = k * (w.dx * px + w.dz * pz - Math.sqrt(9.81 / k) * t) + w.phase0; // Doppelpräzision: exakt in jeder Entfernung
+    const f = k * (w.dx * (px + ox) + w.dz * (pz + oz) - Math.sqrt(9.81 / k) * t) + w.phase0; // absolute Position, Doppelpräzision
     const Q = STEEPNESS / (k * w.amp * N);
     const C = Math.cos(f);
     dx += Q * A * w.dx * C;
@@ -125,14 +129,56 @@ function displacement(px: number, pz: number, t: number, camX: number, camZ: num
   return _d;
 }
 
-/** Höhe der Wasseroberfläche über Weltposition (x, z): Fixpunkt-Iteration über die horizontale Verschiebung */
-export function waveHeight(x: number, z: number, t: number, camX: number, camZ: number): number {
+/**
+ * Höhe der Wasseroberfläche über der LOKALEN Position (x, z): Fixpunkt-Iteration über die horizontale Verschiebung.
+ * `ox`/`oz` = Ursprung (Standard: der aktuelle); `camX`/`camZ` = lokale Kameraposition für die Fernausblendung.
+ */
+export function waveHeight(x: number, z: number, t: number, camX: number, camZ: number, ox = ORIGIN.x, oz = ORIGIN.z): number {
   let px = x;
   let pz = z;
   for (let i = 0; i < 4; i++) {
-    const d = displacement(px, pz, t, camX, camZ);
+    const d = displacement(px, pz, t, camX, camZ, ox, oz);
     px = x - d[0];
     pz = z - d[2];
   }
-  return displacement(px, pz, t, camX, camZ)[1];
+  return displacement(px, pz, t, camX, camZ, ox, oz)[1];
+}
+
+const PROBE_POINTS: readonly (readonly [number, number])[] = [
+  [13.7, -48.2], [-300.1, 152.9], [820.5, -577.3], [-90.2, 640.8],
+];
+
+/**
+ * Selbstprüfung 1 (Floating Origin): Eine Verschiebung um (640, −384) darf die Wasserhöhe an derselben ABSOLUTEN Stelle
+ * nicht ändern. Gibt den größten Unterschied in Metern zurück (soll ~1e-9 sein).
+ */
+export function shiftInvarianceError(t: number, camX: number, camZ: number): number {
+  const DX = 640;
+  const DZ = -384;
+  let err = 0;
+  for (const [x, z] of PROBE_POINTS) {
+    const a = waveHeight(x, z, t, camX, camZ);
+    const b = waveHeight(x - DX, z - DZ, t, camX - DX, camZ - DZ, ORIGIN.x + DX, ORIGIN.z + DZ);
+    err = Math.max(err, Math.abs(a - b));
+  }
+  return err;
+}
+
+/**
+ * Selbstprüfung 2 (GPU-Spiegel): rechnet die Formel des Shaders (float32: k·(d·lokal) + gewickelte Phase) nach und
+ * vergleicht sie mit der CPU-Formel in Doppelpräzision. Fängt falsche Phasen nach Origin-Shifts oder Zeitdrift ab.
+ * Muss nach `updateWavePhases(t)` mit demselben t laufen. Gibt den größten Sinus-Unterschied zurück (float32-Rauschen ~1e-4).
+ */
+export function shaderMirrorError(t: number): number {
+  const TAU = Math.PI * 2;
+  let err = 0;
+  WAVES.forEach((w, i) => {
+    const k = TAU / w.len;
+    for (const [x, z] of PROBE_POINTS) {
+      const gpu = Math.sin(Math.fround(k * (w.dx * x + w.dz * z)) + Math.fround(phase[i]!.value));
+      const cpu = Math.sin(k * (w.dx * (x + ORIGIN.x) + w.dz * (z + ORIGIN.z) - Math.sqrt(9.81 / k) * t) + w.phase0);
+      err = Math.max(err, Math.abs(gpu - cpu));
+    }
+  });
+  return err;
 }

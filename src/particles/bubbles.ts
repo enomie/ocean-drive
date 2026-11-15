@@ -1,3 +1,4 @@
+import { Vector3 } from 'three';
 import { Mesh, PlaneGeometry, StorageInstancedBufferAttribute } from 'three/webgpu';
 import { SpriteNodeMaterial, type ComputeNode, type WebGPURenderer } from 'three/webgpu';
 import {
@@ -23,6 +24,12 @@ export class BubbleSystem {
   readonly mesh: Mesh;
   private readonly spawnNode: ComputeNode;
   private readonly updateNode: ComputeNode;
+  private readonly shiftNode: ComputeNode;
+  private readonly shiftU = uniform(new Vector3());
+  private pdx = 0;
+  private pdz = 0;
+  /** angewandte Origin-Verschiebungen (Probe/HUD) */
+  shifts = 0;
   private readonly spawnA = new StorageInstancedBufferAttribute(new Float32Array(MAX_SPAWN * 4), 4); // xyz, Größe
   private readonly spawnB = new StorageInstancedBufferAttribute(new Float32Array(MAX_SPAWN * 4), 4); // vxyz, Lebensdauer
   private readonly headU = uniform(0, 'uint');
@@ -56,6 +63,14 @@ export class BubbleSystem {
         life.element(slot).assign(vec2(0, b.w));
       });
     })().compute(MAX_SPAWN);
+
+    // ── Pass 0 (nur nach einem Origin-Shift): lebende Partikel in das neue lokale System schieben ──
+    this.shiftNode = Fn(() => {
+      const i = instanceIndex;
+      If(life.element(i).x.lessThan(life.element(i).y), () => {
+        pos.element(i).subAssign(this.shiftU);
+      });
+    })().compute(COUNT);
 
     // ── Pass 2: alle lebenden Partikel integrieren ─────────────────────
     this.updateNode = Fn(() => {
@@ -128,8 +143,21 @@ export class BubbleSystem {
     this.pending++;
   }
 
-  /** pro Frame, vor dem Rendern: neue Partikel einfügen, dann simulieren */
+  /** Origin-Verschiebung vormerken; wirkt in update() VOR dem Einfügen neuer Partikel (die sind schon im neuen System) */
+  shift(dx: number, dz: number): void {
+    this.pdx += dx;
+    this.pdz += dz;
+  }
+
+  /** pro Frame, vor dem Rendern: ggf. verschieben, neue Partikel einfügen, dann simulieren */
   update(dt: number): void {
+    if (this.pdx !== 0 || this.pdz !== 0) {
+      this.shiftU.value.set(this.pdx, 0, this.pdz);
+      this.renderer.compute(this.shiftNode);
+      this.pdx = 0;
+      this.pdz = 0;
+      this.shifts++;
+    }
     if (this.pending > 0) {
       this.spawnA.needsUpdate = true;
       this.spawnB.needsUpdate = true;

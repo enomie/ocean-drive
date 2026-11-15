@@ -18,6 +18,11 @@ export function demoStreamModule(): Module {
       ctx = c;
       bubbles = c.get<BubblesApi>('bubbles');
     },
+    /** Emitter-Position ist lokaler Zustand: beim Origin-Shift mitschieben (bleibt an derselben Stelle in der Welt) */
+    shift(dx, dz) {
+      stream.origin.x -= dx;
+      stream.origin.z -= dz;
+    },
     update() {
       stream.update(ctx.clock.dt, bubbles);
     },

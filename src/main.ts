@@ -1,6 +1,8 @@
 import { PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu';
 import { Engine } from './core/engine';
 import { configureOutput } from './core/output';
+import { ORIGIN } from './core/origin';
+import { ORIGIN_GRID } from './core/config';
 import { flyCameraModule } from './camera';
 import { skyModule } from './sky';
 import { oceanModule } from './ocean';
@@ -31,8 +33,12 @@ await renderer.init();
 
 const scene = new Scene();
 const camera = new PerspectiveCamera(60, innerWidth / innerHeight, 0.3, 40000);
-// Testparameter: ?y=<Starthöhe in m> (negativ = unter Wasser)
-camera.position.set(0, Number(params.get('y') ?? 4), 0);
+// Testparameter: ?y=<Starthöhe in m> (negativ = unter Wasser) · ?x=&z=<absolute Startposition in m>, z. B. x=2000000
+const startX = Number(params.get('x') ?? 0);
+const startZ = Number(params.get('z') ?? 0);
+ORIGIN.x = Math.round(startX / ORIGIN_GRID) * ORIGIN_GRID;
+ORIGIN.z = Math.round(startZ / ORIGIN_GRID) * ORIGIN_GRID;
+camera.position.set(startX - ORIGIN.x, Number(params.get('y') ?? 4), startZ - ORIGIN.z);
 
 /*
  * Verdrahtung: nur registrieren. Reihenfolge ergibt sich aus `deps` der Module.

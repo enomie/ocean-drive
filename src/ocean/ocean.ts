@@ -8,7 +8,7 @@ import { skyBase } from '../sky';
 import { SUN_COL, sunDir } from '../core/sun';
 import { under, underwaterColor } from '../underwater';
 import { finishColor } from '../core/output';
-import { camXZ, gerstner, updateWavePhases, waveHeight } from './waves';
+import { camXZ, gerstner, shaderMirrorError, shiftInvarianceError, updateWavePhases, waveHeight } from './waves';
 
 /** Polares Gitter um die Kamera: dicht nah, grob zum Horizont (~40 km) */
 function polarGrid(rings: number, segs: number, growth: number): BufferGeometry {
@@ -119,6 +119,10 @@ export function createOcean() {
     /** Höhe der Oberfläche über (x, z); Kamera-Abstand für die Fernausblendung */
     heightAt(x: number, z: number, cam: Vector3): number {
       return waveHeight(x, z, time, cam.x, cam.z);
+    },
+    /** Selbstprüfungen für Floating Origin und GPU-Spiegel (siehe waves.ts) */
+    errors(cam: Vector3): { shift: number; mirror: number } {
+      return { shift: shiftInvarianceError(time, cam.x, cam.z), mirror: shaderMirrorError(time) };
     },
   };
 }
