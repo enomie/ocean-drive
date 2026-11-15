@@ -51,13 +51,21 @@ export function createPlankton() {
     mix(vec3(0.9, 0.42, 0.3), vec3(0.95, 0.75, 0.6), r1).mul(0.4),
     vec3(0.55, 0.8, 0.75).mul(r1.mul(0.2).add(0.12)),
   );
-  // Licht von oben: heller nahe der Oberfläche, Lichtschäfte flackern
-  const light = exp(p.y.mul(0.06)).mul(sin(time.mul(0.7).add(p.x.mul(0.3)).add(p.z.mul(0.2))).mul(0.3).add(0.7));
+  // Licht von oben (nimmt mit der Tiefe ab) + Eigenleuchten: ein fester Anteil bleibt immer,
+  // in der Tiefe glimmt ein Teil der Teilchen biolumineszent und pulsiert
+  const daylight = exp(p.y.mul(0.06));
+  const flicker = sin(time.mul(0.7).add(p.x.mul(0.3)).add(p.z.mul(0.2))).mul(0.3).add(0.7);
+  const lit = daylight.mul(0.55).add(0.45).mul(flicker);
+  const pulse = sin(time.mul(1.7).add(r0.mul(60))).mul(0.5).add(0.5);
+  const glow = vec3(0.1, 0.55, 0.5)
+    .mul(daylight.oneMinus())
+    .mul(pulse.mul(0.7).add(0.3))
+    .mul(select(r2.greaterThan(0.7), float(1), float(0.3)));
   const rel = abs(p.sub(cam)).div(BOX / 2);
   const edge = max(rel.x, max(rel.y, rel.z));
   const alpha = float(1).sub(smoothstep(0.75, 1, edge)).mul(smoothstep(0.15, 0.6, d)).mul(fade);
 
-  const vCol = varying(body.mul(light).mul(waterTransmittance(d)), 'vPlanktonCol');
+  const vCol = varying(body.mul(lit).add(glow).mul(waterTransmittance(d)), 'vPlanktonCol');
   const vA = varying(select(air, float(0), alpha), 'vPlanktonA');
 
   const material = new SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending });
