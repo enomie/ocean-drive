@@ -39,6 +39,7 @@ export const LAYERS = {
   rip2: layer(0.45, 2.1, [-0.1, 0.5]),
   rip3: layer(0.2, 4.0, [0.6, -0.3]),
   rip4: layer(0.09, 5.3, [-0.5, 0.7]),
+  rip5: layer(0.04, 0.8, [0.8, 0.4]),
 } as const;
 
 /** Neigungsstärke der Kräuselungs-Oktaven (≈ 4°) */

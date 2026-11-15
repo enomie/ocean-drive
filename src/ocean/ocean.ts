@@ -61,7 +61,7 @@ export function createOcean() {
     const footprint = dist.mul(pixelAngle).div(max(V.y.abs(), 0.15)); // Pixelgröße am Boden (m), gedehnt bei flachem Blick
     const sh = shadingNormal(vBase, footprint);
     const N = sh.normal;
-    const m2 = sh.roughness.add(0.0008); // mittlere quadratische Neigung: unaufgelöste Wellen + Mikro-Rauheit
+    const m2 = sh.roughness.add(0.0003); // mittlere quadratische Neigung: unaufgelöste Wellen + Mikro-Rauheit
 
     const NdV = max(dot(N, V), 0);
     const fres = pow(NdV.oneMinus(), 5).mul(0.98).add(0.02);
@@ -70,7 +70,7 @@ export function createOcean() {
 
     // Körperfarbe: gedämpftes, dunkles Petrol-Blau. Streulicht nur an den dünnen, obersten Kammspitzen gegen das Licht,
     // und nur bei flachem Blick (steil von oben bleibt das Wasser dunkel).
-    const deep = vec3(0.005, 0.026, 0.042);
+    const deep = vec3(0.007, 0.032, 0.05);
     const sss = vec3(0.02, 0.3, 0.27);
     const sunBack = pow(clamp(dot(V.negate(), L).mul(0.5).add(0.5), 0, 1), 8);
     const crest = smoothstep(0.7, 2.0, vHeight);

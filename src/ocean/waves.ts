@@ -20,9 +20,10 @@ export const WAVES: readonly Wave[] = (() => {
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i < N; i++) {
     const len = 140 * Math.pow(2.4 / 140, i / (N - 1)) * (0.93 + rnd() * 0.14);
-    const spread = 0.6 + 0.9 * (i / (N - 1));
-    // jede 5. Welle gehört zu einer kreuzenden Dünung → keine dominante Streifenrichtung
-    const dir = WIND + (i % 5 === 2 ? 1.1 : 0) + (rnd() * 2 - 1) * spread;
+    // drei Richtungs-Cluster (0°, +25°, −15° zum Wind) → spitze, kreuzende Kämme statt weicher S-Kurven
+    const CLUSTER = [0, 0.44, -0.26];
+    const spread = 0.12 + 0.3 * (i / (N - 1));
+    const dir = WIND + CLUSTER[i % 3]! + (rnd() * 2 - 1) * spread;
     const steep = 0.028 + 0.02 * Math.sin(Math.PI * Math.min(i / (N * 0.7), 1));
     out.push({ dx: Math.cos(dir), dz: Math.sin(dir), amp: ((steep * len) / (2 * Math.PI)) * 1.1 * (0.8 + rnd() * 0.4), len, phase0: rnd() * 6.283 });
   }
@@ -95,7 +96,7 @@ export function shadingNormal(base: V2, footprint: F) {
 
   // Muster aufbrechen (nur Shading): ein langsames Feld verschiebt die Phase der kurzen Wellen (Streifen biegen sich),
   // ein zweites moduliert deren Amplitude. Lange Wellen (≥ 100 m) werden kaum verschoben → bleiben deckungsgleich zur Geometrie.
-  const W = vec2(layerNoise(LAYERS.warpX, base).sub(0.5).mul(48), layerNoise(LAYERS.warpZ, base).sub(0.5).mul(48));
+  const W = vec2(layerNoise(LAYERS.warpX, base).sub(0.5).mul(24), layerNoise(LAYERS.warpZ, base).sub(0.5).mul(24));
   const nA = layerNoise(LAYERS.ampA, base);
   const nB = layerNoise(LAYERS.ampB, base);
 
@@ -123,7 +124,7 @@ export function shadingNormal(base: V2, footprint: F) {
 
   // Kräuselung: drei Oktaven animiertes Noise (Dezimeter bis Meter), nach Pixelgröße band-begrenzt wie die Wellen
   // feinste Lagen schwächer: dort ist die Textur am gröbsten abgetastet → sonst krisselig
-  const RIPS: readonly (readonly [typeof LAYERS.rip0, number])[] = [[LAYERS.rip0, 1], [LAYERS.rip1, 1], [LAYERS.rip2, 0.8], [LAYERS.rip3, 0.5], [LAYERS.rip4, 0.3]];
+  const RIPS: readonly (readonly [typeof LAYERS.rip0, number])[] = [[LAYERS.rip0, 1], [LAYERS.rip1, 1], [LAYERS.rip2, 0.9], [LAYERS.rip3, 0.8], [LAYERS.rip4, 0.7], [LAYERS.rip5, 0.55]];
   for (const [L, gain] of RIPS) {
     const vis = oneMinus(smoothstep(0.1, 0.25, footprint.div(L.scale)));
     roughness = roughness.add(oneMinus(vis).mul(0.5 * RIPPLE_SLOPE * RIPPLE_SLOPE));
