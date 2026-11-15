@@ -10,8 +10,8 @@ export class FlyCamera {
   pitch = 0.35;
   /** Grundgeschwindigkeit m/s */
   speed = 25;
-  /** Mindesthöhe über y = 0 (Meeresspiegel) */
-  minY = 1;
+  /** Tiefstmögliche Höhe (später: Meeresboden / Terrain) */
+  minY = -300;
 
   private readonly keys = new Set<string>();
 

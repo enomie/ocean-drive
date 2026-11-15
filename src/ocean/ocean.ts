@@ -1,10 +1,11 @@
 import { BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, type Vector3 } from 'three';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import {
-  abs, cameraPosition, clamp, dot, length, max, mix, normalize, pow, reflect, smoothstep, varying, vec3,
+  abs, cameraPosition, clamp, dot, exp, frontFacing, length, max, mix, normalize, pow, reflect, refract, select,
+  smoothstep, varying, vec3,
 } from 'three/tsl';
 import { SUN_COL, skyBase, sunDir } from '../sky';
-import { camXZ, gerstner, updateWavePhases } from './waves';
+import { camXZ, gerstner, updateWavePhases, waveHeight } from './waves';
 
 /** Polares Gitter um die Kamera: dicht nah, grob zum Horizont (~40 km) */
 function polarGrid(rings: number, segs: number, growth: number): BufferGeometry {
@@ -76,9 +77,19 @@ export function createOcean() {
   const hz = skyBase(normalize(vec3(V.x.negate(), 0.02, V.z.negate())));
   col = mix(col, hz, smoothstep(600, 9000, dist).mul(0.85));
 
+  // ── Ansicht von unten: Snell'sches Fenster + Totalreflexion (Port von infinity-ocean) ──
+  const Nd = N.negate();
+  const T = refract(V.negate(), Nd, 1.33);
+  const Rr = reflect(V.negate(), Nd);
+  const tir = mix(vec3(0, 0.025, 0.05), vec3(0.03, 0.22, 0.27), exp(Rr.y.mul(2.5)));
+  const cosT = clamp(dot(V, Nd), 0, 1);
+  const trans = pow(cosT.oneMinus(), 5).mul(0.9).oneMinus();
+  const window = skyBase(normalize(T.add(1e-6))).mul(trans).mul(vec3(0.75, 0.95, 1.0));
+  const colBelow = select(dot(T, T).lessThan(0.01), tir, mix(tir, window, smoothstep(0, 0.25, cosT)));
+
   const material = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false });
   material.positionNode = g.position;
-  material.colorNode = col;
+  material.colorNode = select(frontFacing, col, colBelow);
 
   const mesh = new Mesh(polarGrid(260, 360, 1.032), material);
   mesh.frustumCulled = false;
@@ -90,6 +101,10 @@ export function createOcean() {
       time += dt;
       updateWavePhases(time);
       camXZ.value.set(cam.x, cam.z);
+    },
+    /** Höhe der Oberfläche über (x, z); Kamera-Abstand für die Fernausblendung */
+    heightAt(x: number, z: number, cam: Vector3): number {
+      return waveHeight(x, z, time, cam.x, cam.z);
     },
   };
 }

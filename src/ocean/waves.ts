@@ -72,3 +72,45 @@ export function gerstner() {
     height: dy,
   };
 }
+
+// ── CPU-Spiegel (muss zur GPU-Funktion oben passen; Basis für Wasserlinie und später Schiffsauftrieb) ──
+const _d: [number, number, number] = [0, 0, 0];
+
+function smooth(a: number, b: number, x: number): number {
+  const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
+/** Verschiebung am unverschobenen Punkt (px, pz) – dieselbe Mathematik wie `gerstner()` */
+function displacement(px: number, pz: number, t: number, camX: number, camZ: number): [number, number, number] {
+  let dx = 0;
+  let dy = 0;
+  let dz = 0;
+  const dist = Math.hypot(px - camX, pz - camZ);
+  for (const w of WAVES) {
+    const k = (Math.PI * 2) / w.len;
+    const A = w.amp * (1 - smooth(w.len * 5, w.len * 13, dist));
+    const f = k * (w.dx * px + w.dz * pz - Math.sqrt(9.81 / k) * t) + w.phase0; // Doppelpräzision: exakt in jeder Entfernung
+    const Q = STEEPNESS / (k * w.amp * N);
+    const C = Math.cos(f);
+    dx += Q * A * w.dx * C;
+    dz += Q * A * w.dz * C;
+    dy += A * Math.sin(f);
+  }
+  _d[0] = dx;
+  _d[1] = dy;
+  _d[2] = dz;
+  return _d;
+}
+
+/** Höhe der Wasseroberfläche über Weltposition (x, z): Fixpunkt-Iteration über die horizontale Verschiebung */
+export function waveHeight(x: number, z: number, t: number, camX: number, camZ: number): number {
+  let px = x;
+  let pz = z;
+  for (let i = 0; i < 4; i++) {
+    const d = displacement(px, pz, t, camX, camZ);
+    px = x - d[0];
+    pz = z - d[2];
+  }
+  return displacement(px, pz, t, camX, camZ)[1];
+}
