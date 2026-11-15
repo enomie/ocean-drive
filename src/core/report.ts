@@ -20,7 +20,8 @@ async function deviceInfo(engine: Engine): Promise<string> {
   const c = engine.renderer.domElement;
   return (
     `GPU: ${adapter}\n` +
-    `Browser: ${chrome ? `Chrome ${chrome}` : navigator.userAgent} · Canvas ${c.width}×${c.height} (DPR ${devicePixelRatio})`
+    `Browser: ${chrome ? `Chrome ${chrome}` : navigator.userAgent} · Canvas ${c.width}×${c.height} = ${f((c.width * c.height) / 1e6, 2)} MP ` +
+    `(Display-DPR ${devicePixelRatio}, Render-Ratio ${f(engine.pixelRatio, 2)})`
   );
 }
 
@@ -83,48 +84,121 @@ function showFallback(text: string): void {
   ta.select();
 }
 
-/**
- * Button unten rechts: misst 5 s, fasst Gerät + Frame-Zeiten + Draw Calls + Module zusammen und kopiert den Text.
- * Lässt sich direkt in den Chat einfügen.
- */
-export function installReportButton(engine: Engine): void {
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+function makeButton(text: string, bottom: number): HTMLButtonElement {
   const btn = document.createElement('button');
-  btn.id = 'copy-report';
-  btn.tabIndex = -1; // Space/WASD sollen nie den Button auslösen
-  btn.textContent = '📋 Messung kopieren';
+  btn.tabIndex = -1; // Space/WASD sollen nie einen Button auslösen
+  btn.textContent = text;
   btn.style.cssText =
-    'position:fixed;right:8px;bottom:8px;z-index:5;font:12px system-ui,sans-serif;padding:6px 10px;border-radius:6px;' +
+    `position:fixed;right:8px;bottom:${bottom}px;z-index:5;font:12px system-ui,sans-serif;padding:6px 10px;border-radius:6px;` +
     'border:1px solid #fff4;background:#000a;color:#fff;cursor:pointer';
   document.body.append(btn);
+  return btn;
+}
 
+async function deliver(btn: HTMLButtonElement, idleText: string, text: string, release: () => void): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = '✓ kopiert – jetzt im Chat einfügen';
+  } catch {
+    btn.textContent = 'Kopieren gesperrt – Text unten markieren';
+    showFallback(text);
+  }
+  console.log(text);
+  setTimeout(() => {
+    btn.textContent = idleText;
+    release();
+  }, 2500);
+}
+
+/** Varianten der Diagnose: jeweils ein Teil weniger bzw. weniger Pixel – die GPU-Zeit-Differenz ist dessen Kosten */
+const VARIANTS: { name: string; hide: string[]; scale: number }[] = [
+  { name: 'alles', hide: [], scale: 1 },
+  { name: 'ohne Himmel', hide: ['sky'], scale: 1 },
+  { name: 'ohne Ozean', hide: ['ocean'], scale: 1 },
+  { name: 'ohne Partikel', hide: ['plankton', 'bubbles'], scale: 1 },
+  { name: 'leer (nur Ausgabe-Pass)', hide: ['sky', 'ocean', 'plankton', 'bubbles'], scale: 1 },
+  { name: 'alles bei 50 % Auflösung', hide: [], scale: 0.5 },
+];
+
+async function runDiagnose(engine: Engine, btn: HTMLButtonElement): Promise<string> {
+  const rows: { name: string; gpu: number | null; p50: number; p99: number; calls: number; mp: number }[] = [];
+  const c = engine.renderer.domElement;
+  for (let i = 0; i < VARIANTS.length; i++) {
+    const v = VARIANTS[i]!;
+    btn.textContent = `Diagnose ${i + 1}/${VARIANTS.length}: ${v.name} …`;
+    engine.setHidden(v.hide);
+    engine.renderScale = v.scale;
+    engine.applyResolution();
+    await wait(1200); // einschwingen (Pipelines, Taktfrequenz)
+    engine.monitor.startCapture();
+    await wait(3000);
+    const st = engine.monitor.finishCapture();
+    rows.push({
+      name: v.name,
+      gpu: st?.gpuMs ?? null,
+      p50: st?.workP50 ?? 0,
+      p99: st?.workP99 ?? 0,
+      calls: st?.drawCallsMax ?? 0,
+      mp: (c.width * c.height) / 1e6,
+    });
+  }
+  engine.setHidden([]);
+  engine.renderScale = 1;
+  engine.applyResolution();
+
+  const base = rows[0]?.gpu ?? null;
+  const cam = engine.camera.position;
+  const lines = [
+    `Ocean Drive Diagnose · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
+    await deviceInfo(engine),
+    `URL: ${location.pathname}${location.search} · Kamera y ${f(cam.y, 1)} ${cam.y < 0 ? '(unter Wasser)' : '(über Wasser)'}`,
+    '',
+    'Variante                      GPU Ø    Arbeit p50 / p99    Calls   MP     Kosten des Weggelassenen',
+  ];
+  for (const r of rows) {
+    const diff = base !== null && r.gpu !== null && r.name !== 'alles' ? f(base - r.gpu, 2) + ' ms' : '';
+    lines.push(
+      `${r.name.padEnd(28)} ${(r.gpu === null ? 'n/a' : f(r.gpu, 2)).padStart(6)}   ` +
+        `${f(r.p50).padStart(5)} / ${f(r.p99).padStart(5)}     ${String(r.calls).padStart(3)}    ${f(r.mp, 1).padStart(4)}   ${diff}`,
+    );
+  }
+  lines.push('', 'Lesehilfe: „Kosten“ = GPU(alles) − GPU(Variante). „leer“ = feste Kosten (MSAA-Auflösung + Ausgabe-Pass).');
+  return lines.join('\n');
+}
+
+/**
+ * Zwei Buttons unten rechts:
+ *  - „Messung kopieren“: 5 s messen, Gerät + Frame-Zeiten + Draw Calls + Module als Text kopieren.
+ *  - „Diagnose“: ~25 s, schaltet Himmel/Ozean/Partikel/Auflösung einzeln um und misst die GPU-Kosten.
+ */
+export function installReportButton(engine: Engine): void {
   let busy = false;
-  btn.addEventListener('click', async () => {
-    btn.blur();
+  const idle1 = '📋 Messung kopieren';
+  const idle2 = '🔬 Diagnose (25 s)';
+  const b1 = makeButton(idle1, 8);
+  const b2 = makeButton(idle2, 44);
+
+  b1.addEventListener('click', async () => {
+    b1.blur();
     if (busy) return;
     busy = true;
     engine.monitor.startCapture();
     for (let s = CAPTURE_SECONDS; s > 0; s--) {
-      btn.textContent = `misst … ${s} s (nicht den Tab wechseln)`;
-      await new Promise((r) => setTimeout(r, 1000));
+      b1.textContent = `misst … ${s} s (nicht den Tab wechseln)`;
+      await wait(1000);
     }
     const stats = engine.monitor.finishCapture();
-    let text: string;
-    if (!stats) {
-      text = 'Keine Frames gemessen – war der Tab im Hintergrund?';
-    } else {
-      text = format(engine, stats, await deviceInfo(engine));
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      btn.textContent = '✓ kopiert – jetzt im Chat einfügen';
-    } catch {
-      btn.textContent = 'Kopieren gesperrt – Text unten markieren';
-      showFallback(text);
-    }
-    console.log(text);
-    setTimeout(() => {
-      btn.textContent = '📋 Messung kopieren';
-      busy = false;
-    }, 2500);
+    const text = stats ? format(engine, stats, await deviceInfo(engine)) : 'Keine Frames gemessen – war der Tab im Hintergrund?';
+    await deliver(b1, idle1, text, () => (busy = false));
+  });
+
+  b2.addEventListener('click', async () => {
+    b2.blur();
+    if (busy) return;
+    busy = true;
+    const text = await runDiagnose(engine, b2);
+    await deliver(b2, idle2, text, () => (busy = false));
   });
 }

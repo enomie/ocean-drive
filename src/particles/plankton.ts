@@ -76,6 +76,7 @@ export function createPlankton() {
   material.colorNode = vec4(vCol.mul(float(1).add(smoothstep(0.2, 0, r).mul(1.5))).mul(a), 1);
 
   const mesh = new Mesh(new PlaneGeometry(1, 1), material);
+  mesh.name = 'plankton';
   mesh.count = COUNT;
   mesh.frustumCulled = false;
   mesh.renderOrder = 5;

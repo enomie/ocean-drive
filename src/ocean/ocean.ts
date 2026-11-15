@@ -103,6 +103,7 @@ export function createOcean() {
   })();
 
   const mesh = new Mesh(polarGrid(260, 360, 1.032), material);
+  mesh.name = 'ocean';
   mesh.frustumCulled = false;
 
   let time = 0;

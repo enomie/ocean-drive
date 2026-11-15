@@ -106,6 +106,7 @@ export class BubbleSystem {
     material.colorNode = vec4(mix(body, underwaterFog(body, vRd, vDist), under), a.min(1));
 
     this.mesh = new Mesh(new PlaneGeometry(1, 1), material);
+    this.mesh.name = 'bubbles';
     this.mesh.count = COUNT;
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 4;

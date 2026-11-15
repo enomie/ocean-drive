@@ -1,7 +1,7 @@
 import type { PerspectiveCamera, Scene } from 'three';
 import { TimestampQuery, type WebGPURenderer } from 'three/webgpu';
 import { Clock } from './clock';
-import { FIXED_DT, MAX_FIXED_STEPS, MAX_FRAME_DT, PROBE_INTERVAL } from './config';
+import { FIXED_DT, MAX_FIXED_STEPS, MAX_FRAME_DT, MAX_RENDER_PIXELS, PROBE_INTERVAL } from './config';
 import { Input } from './input';
 import type { Context, Module, ProbeResult } from './module';
 import { Monitor, type Report } from './monitor';
@@ -33,12 +33,45 @@ export class Engine implements Context {
   private started = false;
   private running = false;
 
+  /** Diagnose: Skala auf die Renderauflösung (1 = normal) */
+  renderScale = 1;
+  /** Diagnose: Objekte (nach Name) ausblenden, um ihre GPU-Kosten einzeln zu messen */
+  private hidden = new Set<string>();
+  private readonly maxPixels: number;
+  readonly dev: boolean;
+
   constructor(
     readonly renderer: WebGPURenderer,
     readonly scene: Scene,
     readonly camera: PerspectiveCamera,
-    readonly dev: boolean = import.meta.env.DEV,
-  ) {}
+    opts: { maxPixels?: number; dev?: boolean } = {},
+  ) {
+    this.maxPixels = opts.maxPixels ?? MAX_RENDER_PIXELS;
+    this.dev = opts.dev ?? import.meta.env.DEV;
+  }
+
+  /** Renderauflösung: Pixel-Ratio des Displays, begrenzt auf maxPixels, mal Diagnose-Skala */
+  get pixelRatio(): number {
+    const cap = Math.sqrt(this.maxPixels / (innerWidth * innerHeight));
+    return Math.min(devicePixelRatio, 2, cap) * this.renderScale;
+  }
+
+  /** Diagnose: genau diese benannten Objekte ausblenden (alle anderen wieder einblenden) */
+  setHidden(names: readonly string[]): void {
+    for (const old of this.hidden) {
+      if (!names.includes(old)) {
+        const o = this.scene.getObjectByName(old);
+        if (o) o.visible = true;
+      }
+    }
+    this.hidden = new Set(names);
+  }
+
+  /** Auflösung neu anwenden (nach Änderung von renderScale) */
+  applyResolution(): void {
+    this.renderer.setPixelRatio(this.pixelRatio);
+    this.renderer.setSize(innerWidth, innerHeight);
+  }
 
   add(m: Module): this {
     if (this.started) throw new Error(`Modul "${m.name}" nach dem Start hinzugefügt`);
@@ -83,6 +116,7 @@ export class Engine implements Context {
 
   async start(): Promise<void> {
     this.started = true;
+    this.resize(); // Auflösung vor dem Pipeline-Aufbau festlegen
     this.sort();
     for (const m of this.modules) await m.init?.(this);
 
@@ -115,7 +149,6 @@ export class Engine implements Context {
     });
     installReportButton(this);
     addEventListener('resize', () => this.resize());
-    this.resize();
 
     this.last = performance.now();
     this.running = true;
@@ -131,7 +164,7 @@ export class Engine implements Context {
   private resize(): void {
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(innerWidth, innerHeight);
+    this.applyResolution();
   }
 
   private runProbes(): void {
@@ -185,6 +218,7 @@ export class Engine implements Context {
       m.update(dt, alpha);
       mon.addModule(i, performance.now() - a);
     }
+    if (this.hidden.size > 0) for (const n of this.hidden) { const o = this.scene.getObjectByName(n); if (o) o.visible = false; }
     // 4. Compute
     for (let i = 0; i < mods.length; i++) {
       const m = mods[i]!;

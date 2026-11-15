@@ -24,7 +24,6 @@ await requireWebGPU();
 const renderer = new WebGPURenderer({ antialias: true, powerPreference: 'high-performance', trackTimestamp: true });
 renderer.toneMapping = ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.6;
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 await renderer.init();
 
@@ -38,7 +37,8 @@ camera.position.set(0, Number(params.get('y') ?? 4), 0);
  * Verdrahtung: nur registrieren. Reihenfolge ergibt sich aus `deps` der Module.
  * Neues Thema = neues Modul hier eintragen, sonst nichts anfassen.
  */
-const engine = new Engine(renderer, scene, camera)
+// ?mp=<Megapixel> überschreibt die maximale Renderauflösung (Standard siehe core/config.ts)
+const engine = new Engine(renderer, scene, camera, params.has('mp') ? { maxPixels: Number(params.get('mp')) * 1e6 } : {})
   .add(flyCameraModule())
   .add(skyModule())
   .add(oceanModule())

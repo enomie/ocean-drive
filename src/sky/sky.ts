@@ -69,6 +69,7 @@ export function createSky() {
   })();
 
   const mesh = new Mesh(new SphereGeometry(30000, 48, 24), material);
+  mesh.name = 'sky';
   mesh.frustumCulled = false;
   mesh.renderOrder = -10;
 

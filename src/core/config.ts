@@ -23,3 +23,9 @@ export const PROBE_INTERVAL = 2;
 
 /** Die ersten Frames (Pipeline-Aufbau, Shader-Compile) zählen nicht in die Messung */
 export const WARMUP_FRAMES = 90;
+
+/**
+ * Maximale Renderauflösung in Pixeln (Ziel: ~1080p-Äquivalent plus Reserve). Auf hochauflösenden Displays
+ * (z. B. MacBook, DPR 2 ≈ 5,9 MP) wird der Pixel-Ratio so weit gesenkt. URL `?mp=3.3` überschreibt (Megapixel).
+ */
+export const MAX_RENDER_PIXELS = 2_600_000;
